@@ -1,0 +1,8 @@
+.DS_Store
+dist
+*.hi
+*.o
+TAGS
+*~
+_build
+_build.database

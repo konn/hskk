@@ -1,0 +1,465 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 46;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		953CEFF319D1587B00548922 /* InputMethodKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 953CEFF219D1587B00548922 /* InputMethodKit.framework */; };
+		958EA57019D1440B00B191A9 /* main.m in Sources */ = {isa = PBXBuildFile; fileRef = 958EA56F19D1440B00B191A9 /* main.m */; };
+		958EA57519D1440B00B191A9 /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 958EA57419D1440B00B191A9 /* Images.xcassets */; };
+		958EA57819D1440B00B191A9 /* MainMenu.xib in Resources */ = {isa = PBXBuildFile; fileRef = 958EA57619D1440B00B191A9 /* MainMenu.xib */; };
+		958EA58419D1440B00B191A9 /* hSKKTests.m in Sources */ = {isa = PBXBuildFile; fileRef = 958EA58319D1440B00B191A9 /* hSKKTests.m */; };
+		958EA58E19D14EB800B191A9 /* icon-03.tiff in Resources */ = {isa = PBXBuildFile; fileRef = 958EA58D19D14EB800B191A9 /* icon-03.tiff */; };
+		958EA59119D1501200B191A9 /* HSKKController.m in Sources */ = {isa = PBXBuildFile; fileRef = 958EA59019D1501200B191A9 /* HSKKController.m */; };
+		958EA59A19D151DF00B191A9 /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 958EA59919D151DF00B191A9 /* Cocoa.framework */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		958EA57E19D1440B00B191A9 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 958EA56219D1440B00B191A9 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 958EA56919D1440B00B191A9;
+			remoteInfo = hSKK;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		953CEFF219D1587B00548922 /* InputMethodKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = InputMethodKit.framework; path = System/Library/Frameworks/InputMethodKit.framework; sourceTree = SDKROOT; };
+		958EA56A19D1440B00B191A9 /* hSKK.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = hSKK.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		958EA56E19D1440B00B191A9 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		958EA56F19D1440B00B191A9 /* main.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = main.m; sourceTree = "<group>"; };
+		958EA57419D1440B00B191A9 /* Images.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Images.xcassets; sourceTree = "<group>"; };
+		958EA57719D1440B00B191A9 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/MainMenu.xib; sourceTree = "<group>"; };
+		958EA57D19D1440B00B191A9 /* hSKKTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = hSKKTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		958EA58219D1440B00B191A9 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		958EA58319D1440B00B191A9 /* hSKKTests.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = hSKKTests.m; sourceTree = "<group>"; };
+		958EA58D19D14EB800B191A9 /* icon-03.tiff */ = {isa = PBXFileReference; lastKnownFileType = image.tiff; name = "icon-03.tiff"; path = "../icon-03.tiff"; sourceTree = "<group>"; };
+		958EA58F19D1501200B191A9 /* HSKKController.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = HSKKController.h; sourceTree = "<group>"; };
+		958EA59019D1501200B191A9 /* HSKKController.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = HSKKController.m; sourceTree = "<group>"; };
+		958EA59919D151DF00B191A9 /* Cocoa.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Cocoa.framework; path = System/Library/Frameworks/Cocoa.framework; sourceTree = SDKROOT; };
+		958EA59E19D1539500B191A9 /* AppKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AppKit.framework; path = ../../../../../../../../../System/Library/Frameworks/AppKit.framework; sourceTree = "<group>"; };
+		958EA5A019D153AF00B191A9 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = ../../../../../../../../../System/Library/Frameworks/Foundation.framework; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		958EA56719D1440B00B191A9 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				953CEFF319D1587B00548922 /* InputMethodKit.framework in Frameworks */,
+				958EA59A19D151DF00B191A9 /* Cocoa.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		958EA57A19D1440B00B191A9 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		958EA56119D1440B00B191A9 = {
+			isa = PBXGroup;
+			children = (
+				958EA56C19D1440B00B191A9 /* hSKK */,
+				958EA58019D1440B00B191A9 /* hSKKTests */,
+				958EA59B19D1535100B191A9 /* Frameworks */,
+				958EA56B19D1440B00B191A9 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		958EA56B19D1440B00B191A9 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				958EA56A19D1440B00B191A9 /* hSKK.app */,
+				958EA57D19D1440B00B191A9 /* hSKKTests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		958EA56C19D1440B00B191A9 /* hSKK */ = {
+			isa = PBXGroup;
+			children = (
+				958EA57419D1440B00B191A9 /* Images.xcassets */,
+				958EA58D19D14EB800B191A9 /* icon-03.tiff */,
+				958EA57619D1440B00B191A9 /* MainMenu.xib */,
+				958EA56D19D1440B00B191A9 /* Supporting Files */,
+			);
+			path = hSKK;
+			sourceTree = "<group>";
+		};
+		958EA56D19D1440B00B191A9 /* Supporting Files */ = {
+			isa = PBXGroup;
+			children = (
+				958EA56E19D1440B00B191A9 /* Info.plist */,
+				958EA58F19D1501200B191A9 /* HSKKController.h */,
+				958EA59019D1501200B191A9 /* HSKKController.m */,
+				958EA56F19D1440B00B191A9 /* main.m */,
+			);
+			name = "Supporting Files";
+			sourceTree = "<group>";
+		};
+		958EA58019D1440B00B191A9 /* hSKKTests */ = {
+			isa = PBXGroup;
+			children = (
+				958EA58319D1440B00B191A9 /* hSKKTests.m */,
+				958EA58119D1440B00B191A9 /* Supporting Files */,
+			);
+			path = hSKKTests;
+			sourceTree = "<group>";
+		};
+		958EA58119D1440B00B191A9 /* Supporting Files */ = {
+			isa = PBXGroup;
+			children = (
+				958EA58219D1440B00B191A9 /* Info.plist */,
+			);
+			name = "Supporting Files";
+			sourceTree = "<group>";
+		};
+		958EA59B19D1535100B191A9 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				953CEFF219D1587B00548922 /* InputMethodKit.framework */,
+				958EA59C19D1535800B191A9 /* Linked Frameworks */,
+				958EA59D19D1537900B191A9 /* Other Frameworks */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		958EA59C19D1535800B191A9 /* Linked Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				958EA59919D151DF00B191A9 /* Cocoa.framework */,
+			);
+			name = "Linked Frameworks";
+			sourceTree = "<group>";
+		};
+		958EA59D19D1537900B191A9 /* Other Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				958EA5A019D153AF00B191A9 /* Foundation.framework */,
+				958EA59E19D1539500B191A9 /* AppKit.framework */,
+			);
+			name = "Other Frameworks";
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		958EA56919D1440B00B191A9 /* hSKK */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 958EA58719D1440B00B191A9 /* Build configuration list for PBXNativeTarget "hSKK" */;
+			buildPhases = (
+				958EA56619D1440B00B191A9 /* Sources */,
+				958EA56719D1440B00B191A9 /* Frameworks */,
+				958EA56819D1440B00B191A9 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = hSKK;
+			productName = hSKK;
+			productReference = 958EA56A19D1440B00B191A9 /* hSKK.app */;
+			productType = "com.apple.product-type.application";
+		};
+		958EA57C19D1440B00B191A9 /* hSKKTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 958EA58A19D1440B00B191A9 /* Build configuration list for PBXNativeTarget "hSKKTests" */;
+			buildPhases = (
+				958EA57919D1440B00B191A9 /* Sources */,
+				958EA57A19D1440B00B191A9 /* Frameworks */,
+				958EA57B19D1440B00B191A9 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				958EA57F19D1440B00B191A9 /* PBXTargetDependency */,
+			);
+			name = hSKKTests;
+			productName = hSKKTests;
+			productReference = 958EA57D19D1440B00B191A9 /* hSKKTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		958EA56219D1440B00B191A9 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				LastUpgradeCheck = 0600;
+				ORGANIZATIONNAME = "Hiromi ISHII";
+				TargetAttributes = {
+					958EA56919D1440B00B191A9 = {
+						CreatedOnToolsVersion = 6.0.1;
+					};
+					958EA57C19D1440B00B191A9 = {
+						CreatedOnToolsVersion = 6.0.1;
+						TestTargetID = 958EA56919D1440B00B191A9;
+					};
+				};
+			};
+			buildConfigurationList = 958EA56519D1440B00B191A9 /* Build configuration list for PBXProject "hSKK" */;
+			compatibilityVersion = "Xcode 3.2";
+			developmentRegion = English;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 958EA56119D1440B00B191A9;
+			productRefGroup = 958EA56B19D1440B00B191A9 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				958EA56919D1440B00B191A9 /* hSKK */,
+				958EA57C19D1440B00B191A9 /* hSKKTests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		958EA56819D1440B00B191A9 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				958EA57519D1440B00B191A9 /* Images.xcassets in Resources */,
+				958EA57819D1440B00B191A9 /* MainMenu.xib in Resources */,
+				958EA58E19D14EB800B191A9 /* icon-03.tiff in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		958EA57B19D1440B00B191A9 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		958EA56619D1440B00B191A9 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				958EA59119D1501200B191A9 /* HSKKController.m in Sources */,
+				958EA57019D1440B00B191A9 /* main.m in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		958EA57919D1440B00B191A9 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				958EA58419D1440B00B191A9 /* hSKKTests.m in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		958EA57F19D1440B00B191A9 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 958EA56919D1440B00B191A9 /* hSKK */;
+			targetProxy = 958EA57E19D1440B00B191A9 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin PBXVariantGroup section */
+		958EA57619D1440B00B191A9 /* MainMenu.xib */ = {
+			isa = PBXVariantGroup;
+			children = (
+				958EA57719D1440B00B191A9 /* Base */,
+			);
+			name = MainMenu.xib;
+			sourceTree = "<group>";
+		};
+/* End PBXVariantGroup section */
+
+/* Begin XCBuildConfiguration section */
+		958EA58519D1440B00B191A9 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = YES;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++0x";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_IDENTITY = "-";
+				COPY_PHASE_STRIP = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu99;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 10.9;
+				MTL_ENABLE_DEBUG_INFO = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = macosx;
+			};
+			name = Debug;
+		};
+		958EA58619D1440B00B191A9 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = YES;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++0x";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_IDENTITY = "-";
+				COPY_PHASE_STRIP = YES;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu99;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 10.9;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = macosx;
+			};
+			name = Release;
+		};
+		958EA58819D1440B00B191A9 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				COMBINE_HIDPI_IMAGES = YES;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)",
+				);
+				INFOPLIST_FILE = hSKK/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+			};
+			name = Debug;
+		};
+		958EA58919D1440B00B191A9 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				COMBINE_HIDPI_IMAGES = YES;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)",
+				);
+				INFOPLIST_FILE = hSKK/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+			};
+			name = Release;
+		};
+		958EA58B19D1440B00B191A9 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				COMBINE_HIDPI_IMAGES = YES;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(DEVELOPER_FRAMEWORKS_DIR)",
+					"$(inherited)",
+				);
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				INFOPLIST_FILE = hSKKTests/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks @loader_path/../Frameworks";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/hSKK.app/Contents/MacOS/hSKK";
+			};
+			name = Debug;
+		};
+		958EA58C19D1440B00B191A9 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				COMBINE_HIDPI_IMAGES = YES;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(DEVELOPER_FRAMEWORKS_DIR)",
+					"$(inherited)",
+				);
+				INFOPLIST_FILE = hSKKTests/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks @loader_path/../Frameworks";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/hSKK.app/Contents/MacOS/hSKK";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		958EA56519D1440B00B191A9 /* Build configuration list for PBXProject "hSKK" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				958EA58519D1440B00B191A9 /* Debug */,
+				958EA58619D1440B00B191A9 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		958EA58719D1440B00B191A9 /* Build configuration list for PBXNativeTarget "hSKK" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				958EA58819D1440B00B191A9 /* Debug */,
+				958EA58919D1440B00B191A9 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		958EA58A19D1440B00B191A9 /* Build configuration list for PBXNativeTarget "hSKKTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				958EA58B19D1440B00B191A9 /* Debug */,
+				958EA58C19D1440B00B191A9 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 958EA56219D1440B00B191A9 /* Project object */;
+}
