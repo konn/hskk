@@ -6,3 +6,7 @@ TAGS
 *~
 _build
 _build.database
+*_objc.[hm]
+*_stub.[hm]
+hSKK.app
+

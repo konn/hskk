@@ -43,6 +43,7 @@ Executable simpleserv
   ghc-options: -caf-all -auto-all -rtsopts -O2 -threaded
 
 Executable hSKK
+  buildable: False
   build-depends:       base,
                        -- skk,
                        fsnotify,

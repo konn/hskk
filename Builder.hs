@@ -84,7 +84,6 @@ buildWith AppSetting {..} = do
     () <- cmd "mv" "-f" skeleton out
     copyFile' exe (out </> "Contents" </> "MacOS" </> app)
     putNormal "Application bundle successfully compiled."
-    command_ [] "sudo" ["cp", "-r", dest, "/Library/Input Methods/"]
 
   build </> app <.> "app" *> \out -> do
     need [xcode]
