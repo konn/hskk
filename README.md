@@ -1,4 +1,4 @@
-hSKK
+λSKK
 ============
 CAUTION: λSKK is currently alpha version. USE AT YOUR OWN RISK.
 
