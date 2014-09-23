@@ -1,7 +1,7 @@
-{-# LANGUAGE DataKinds, DeriveDataTypeable, EmptyDataDecls                 #-}
-{-# LANGUAGE FlexibleInstances, MultiParamTypeClasses, PatternGuards       #-}
-{-# LANGUAGE QuasiQuotes, RecursiveDo, StandaloneDeriving, TemplateHaskell #-}
-{-# LANGUAGE TypeFamilies, TypeOperators                                   #-}
+{-# LANGUAGE DataKinds, DeriveDataTypeable, EmptyDataDecls               #-}
+{-# LANGUAGE FlexibleContexts, FlexibleInstances, MultiParamTypeClasses  #-}
+{-# LANGUAGE PatternGuards, QuasiQuotes, RecursiveDo, StandaloneDeriving #-}
+{-# LANGUAGE TemplateHaskell, TypeFamilies, TypeOperators                #-}
 {-# OPTIONS_GHC -fno-warn-unused-binds -fno-warn-orphans #-}
 module HSKKController ( objc_initialise ) where
 import Messaging
@@ -44,6 +44,15 @@ defineSelector
               , reciever = (''NSObject, "sender")
               , arguments = ["string" :>>: ''String]
               , definition = [cexp| [(id)sender insertText: string
+                                      replacementRange: NSMakeRange(NSNotFound, NSNotFound)]|]
+              }
+
+defineSelector
+  newSelector { selector = "setMarkedText"
+              , reciever = (''NSObject, "sender")
+              , arguments = ["string" :>>: ''String, "start" :>>: ''Int, "length" :>>: ''Int]
+              , definition = [cexp| [(id)sender setMarkedText: string
+                                      selectionRange: NSMakeRange(start, length)
                                       replacementRange: NSMakeRange(NSNotFound, NSNotFound)]|]
               }
 

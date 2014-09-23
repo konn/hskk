@@ -2,12 +2,15 @@
 {-# LANGUAGE MultiParamTypeClasses, OverloadedStrings, QuasiQuotes   #-}
 {-# LANGUAGE StandaloneDeriving, TemplateHaskell, TupleSections      #-}
 {-# LANGUAGE TypeOperators                                           #-}
+{-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 module Messaging.Macros (defineClass, definePhantomClass, idMarshaller,
                          defineSelector, SelectorDef(..), newSelector, Argument(..)) where
 import           Control.Applicative    ((<$>))
-import           Control.Monad          (liftM, replicateM)
+import           Control.Monad          (forM, liftM, replicateM)
 import           Data.Char              (isLower, isUpper, toLower, toUpper)
-import           Data.Maybe             (fromMaybe)
+import           Data.Either            (rights)
+import           Data.List              (unzip4)
+import           Data.Maybe             (fromMaybe, fromJust, catMaybes)
 import           Data.Typeable          (Typeable)
 import           GHC.TypeLits           (Symbol)
 import           Language.C.Inline.ObjC
@@ -90,12 +93,26 @@ defineSelector (Selector sel (cls, recv) args env mret expr) = do
       sendDec =
         funD 'send' [clause [varP recName, conP conName $ map (varP . getName) args]
                      (normalB body) [] ]
-  aliasSig <- sigD funName $ foldr funT [t| Message $(toSym sel) |] $ map (liftM snd) typs
-  aliasDec <- funD funName [ clause [] (normalB $ conE conName) []]
+  sups <- mapM (liftM snd) typs
+  argseeds <- forM sups $ \ tp -> do
+    arg <- newName "arg"
+    castable <- maybe (return False) isObject $ getConName tp
+    if castable
+      then do
+      s <- newName "t"
+      let cls = conT $ mkName $ nameBase (fromJust $ getConName tp) ++ "Class"
+          cxt = Just $ classP ''(:>) [cls, varT s]
+      return (cxt, Right s, arg, [| cast $(varE arg) |])
+      else return (Nothing, Left tp, arg, varE arg)
+  let (mcxts, sTyps, vars, bodys) = unzip4 argseeds
+      cnstrs = catMaybes mcxts
+  aliasSig <- sigD funName $ forallT (map PlainTV $ rights sTyps) (sequence cnstrs) $
+                foldr funT [t| Message $(toSym sel) |] $
+                map (either return (appT (conT ''Object) . varT)) sTyps
+  aliasDec <- funD funName [ clause (map varP vars) (normalB $ appsE (conE conName : bodys)) []]
   ds <- head <$> [d| type instance Returns $(toSym sel) = IO $(fromMaybe [t| () |] mret) |]
   inst <- instanceD (return []) [t| Selector $(conT $ mkName $ nameBase cls ++ "Class") $(toSym sel) |] $
           [msgDec, return ds, sendDec]
-
   return [inst, aliasSig, aliasDec]
   where
     recName = mkName recv
@@ -103,8 +120,33 @@ defineSelector (Selector sel (cls, recv) args env mret expr) = do
     funName = mkName $ camelCase sel
     conName = mkName $ strictCamelCase sel
 
+getConName :: Type -> Maybe Name
+getConName (ConT n) = Just n
+getConName (ForallT _ _ typ) = getConName typ
+getConName (AppT a _) = getConName a
+getConName (SigT a _) = getConName a
+getConName (PromotedT a) = Just a
+getConName (TupleT n) = Just $ tupleTypeName n
+getConName (UnboxedTupleT n) = Just $ unboxedTupleTypeName n
+getConName (PromotedTupleT n) = Just $ tupleDataName n
+getConName PromotedNilT = Just '[]
+getConName PromotedConsT = Just '(:)
+getConName _ = Nothing
+
 funT :: TypeQ -> TypeQ -> TypeQ
 funT a b = appT (appT arrowT a) b
+
+isObject :: Name -> Q Bool
+isObject name
+  | name == ''Object = return True
+  | otherwise = do
+    info <- reify name
+    case info of
+      TyConI dec ->
+        case dec of
+          TySynD _ [] typ -> maybe (return False) isObject $ getConName typ
+          _ -> return False
+      _ -> return False
 
 camelCase :: String -> String
 camelCase "" = ""

@@ -1,6 +1,6 @@
-{-# LANGUAGE DeriveDataTypeable, FlexibleInstances, GADTs        #-}
-{-# LANGUAGE MultiParamTypeClasses, QuasiQuotes, TemplateHaskell #-}
-{-# LANGUAGE TypeFamilies, TypeOperators                         #-}
+{-# LANGUAGE DeriveDataTypeable, FlexibleContexts, FlexibleInstances, GADTs #-}
+{-# LANGUAGE MultiParamTypeClasses, QuasiQuotes, TemplateHaskell            #-}
+{-# LANGUAGE TypeFamilies, TypeOperators                                    #-}
 -- HSApp: a simple Cocoa app in Haskell
 --
 -- Main application module entering AppKit's application framework
@@ -81,7 +81,7 @@ main = do
   ident <- mainBundle # bundleIdentifier
   nsLog $ "identifier: " ++ ident
   server <- serverWithNameBundleIdentifier connName ident
-  mainBundle # loadNibNamedOwner "MainMenu" (cast sharedApplication)
+  mainBundle # loadNibNamedOwner "MainMenu" sharedApplication
   nsLog . ("bundle: " ++ ) =<< server # bundle #. description
   sharedApplication # run
   return ()
