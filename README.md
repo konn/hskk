@@ -2,7 +2,7 @@
 ============
 CAUTION: λSKK is currently alpha version. USE AT YOUR OWN RISK.
 
-λSKK is the (Not yet) SKK implementation with Haskell + FRP (ordrea) + InputMethodKit.
+λSKK is (not yet) the SKK implementation for MacOS X in Haskell with FRP (ordrea) + InputMethodKit.
 
 Build
 =====
