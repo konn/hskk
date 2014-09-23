@@ -108,8 +108,8 @@ romanConv (KanaTable dic) mode input = mapAccumE ("", dic) (flip upd <$> input)
              else ((out, ps''), [InProgress inp])
         Nothing | Trie.null ps' ->
                     if Trie.null (submap inp dic)
-                    then ((pre, dic), addPre [NoHit])
-                    else second addPre $ upd (pre, dic) $ BS.head inp
+                    then (("", dic), addPre [NoHit])
+                    else second addPre $ upd ("", dic) $ BS.head inp
                 | otherwise     -> (("", ps'), [InProgress inp])
 
 prefixes :: BS.ByteString -> Trie a -> Trie a
