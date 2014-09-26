@@ -1,7 +1,8 @@
-{-# LANGUAGE DataKinds, DeriveDataTypeable, EmptyDataDecls               #-}
-{-# LANGUAGE FlexibleContexts, FlexibleInstances, MultiParamTypeClasses  #-}
-{-# LANGUAGE PatternGuards, QuasiQuotes, RecursiveDo, StandaloneDeriving #-}
-{-# LANGUAGE TemplateHaskell, TypeFamilies, TypeOperators                #-}
+{-# LANGUAGE DataKinds, DeriveDataTypeable, EmptyDataDecls              #-}
+{-# LANGUAGE FlexibleContexts, FlexibleInstances, MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings, PatternGuards, QuasiQuotes, RecursiveDo #-}
+{-# LANGUAGE StandaloneDeriving, TemplateHaskell, TypeFamilies          #-}
+{-# LANGUAGE TypeOperators                                              #-}
 {-# OPTIONS_GHC -fno-warn-unused-binds -fno-warn-orphans #-}
 module HSKKController ( objc_initialise ) where
 import Messaging
@@ -10,8 +11,15 @@ import Text.InputMethod.SKK
 
 import           Control.Applicative    ((<$>))
 import           Control.Lens           (isn't)
+import           Control.Lens           (makeLenses)
+import           Control.Lens           ((<>~))
+import           Control.Lens           ((&))
+import           Control.Lens           ((^.))
+import           Control.Lens           ((.~))
 import           Control.Lens.Extras    (is)
 import           Control.Monad.IO.Class (liftIO)
+import qualified Data.ByteString.Char8  as BS
+import           Data.Foldable          (foldlM)
 import qualified Data.Map               as M
 import           Data.Monoid            (mconcat)
 import qualified Data.Text              as T
@@ -66,6 +74,9 @@ data KeyResult = KeyResult { curSession   :: Session
                            , stateChanged :: Bool
                            } deriving (Typeable)
 
+data InputState = InputState { _markedBuffer :: BS.ByteString }
+makeLenses ''InputState
+
 newKeyResult :: Session -> Bool -> KeyResult
 newKeyResult = KeyResult
 
@@ -102,6 +113,7 @@ objc_typecheck
 
 pushKey :: Session -> NSObject -> String -> IO KeyResult
 pushKey session client input = do
+  nsLog $ "keypushed: " ++ input
   (upd, dict') <- updaterFor client $ _dict session
   accepted <- and <$> mapM upd input
   return $ KeyResult session { _dict = dict' } accepted
@@ -116,13 +128,27 @@ updaterFor sender dic
       input <- externalE eev
       ev <- romanConv defKanaTable Katakana input
       _ <- generatorE $ liftIO . nsLog . ("input: " ++) . show <$> ev
-      _ <- generatorE $ liftIO . edited . mconcat <$> ev
+      _ <- generatorE $ liftIO . edited (InputState "") . mconcat <$> ev
+      -- _ <- mapAccumEM (InputState "") (edited' <$> ev)
       return $ isn't _NoHit . head <$> eventToBehavior (mconcat <$> ev)
     let push inp = triggerExternalEvent eev inp >> step
     return $ (push, M.insert sender push dic)
   where
-    edited (Converted text) = sender # insertText (T.unpack text)
-    edited _ = return ()
+    edited s (Converted text) = do
+      liftIO $ sender # insertText (T.unpack text)
+      return $ s & markedBuffer .~ ""
+    edited s (InProgress c)   = do
+      let s'  = s & markedBuffer <>~ c
+          buf = s' ^. markedBuffer
+      liftIO $ nsLog $ "temp buf: " ++ BS.unpack buf
+      liftIO $ sender # setMarkedText (BS.unpack buf) 0 (BS.length buf)
+      return s'
+    edited s NoHit = return  s
+    {-
+    edited' cs s0 = do
+      s' <- foldlM edited s0 cs
+      return (s', ())
+    -}
 
 nsLog :: String -> IO ()
 nsLog msg = $(objc ['msg :> ''String] $ void [cexp| NSLog(@"%@", msg) |])
@@ -159,6 +185,6 @@ objc_implementation [ Typed 'pushKey, Typed 'newSession ]
 @end
 |]
 
---objc_initialise = undefined
+-- objc_initialise = undefined
 
 objc_emit
