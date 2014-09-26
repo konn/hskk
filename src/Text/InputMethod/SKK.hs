@@ -47,7 +47,7 @@ data KanaEntry = KanaEntry { _hiraConv    :: T.Text
 
 makeLenses ''KanaEntry
 
-data ConvState = Converted T.Text | NoHit | InProgress BS.ByteString
+data ConvState = Converted T.Text | NoHit | InProgress BS.ByteString | Deleted
                deriving (Read, Show, Eq, Ord, Data, Typeable)
 
 makeLenses ''ConvState
@@ -61,6 +61,8 @@ instance Monoid ConvState where
   mappend c@Converted{} InProgress{} = c
   mappend InProgress{} c@Converted{} = c
   mappend (InProgress c) (InProgress d) = InProgress (c <> d)
+  mappend Deleted a = a
+  mappend a Deleted = a
 
 data ConvMode = Hiragana | Katakana | HankakuKatakana
               deriving (Read, Show, Eq, Ord, Data, Typeable)
@@ -91,26 +93,26 @@ convChar Katakana = kataConv
 convChar HankakuKatakana = hanKataConv
 
 romanConv :: KanaTable -> ConvMode -> Event Char -> SignalGen (Event [ConvState])
-romanConv (KanaTable dic) mode input = mapAccumE ("", dic) (flip upd <$> input)
+romanConv (KanaTable dic) mode input = mapAccumE ("", [dic]) (flip upd <$> input)
   where
+    upd (pre, [a]) '\DEL' = ((pre, [a]), [NoHit])
+    upd (pre, ds) '\DEL' = ((pre, tail ds), [Deleted])
     upd (pre, ps) (BS.singleton -> inp) =
-      let (mans, ps') = lookupBy (,) inp ps
+      let (mans, ps') = lookupBy (,) inp $ head ps
           addPre | T.null pre = id
                  | otherwise  = (Converted pre :)
       in case mans of
         Just a ->
-          let (ps'', out) = case a ^. nextState of
-                Nothing -> (ps', a ^. convChar mode)
-                Just st -> (prefixes (BS.singleton st) dic,
-                            a ^. convChar mode)
+          let out   = a ^. convChar mode
+              app d = maybe (d :) (:) $ flip prefixes d . BS.singleton <$> a ^. nextState
           in if Trie.null ps'
-             then  (("", ps''), [Converted out])
-             else ((out, ps''), [InProgress inp])
+             then  (("", app dic []), [Converted out])
+             else ((out, app ps' ps), [InProgress inp])
         Nothing | Trie.null ps' ->
                     if Trie.null (submap inp dic)
-                    then (("", dic), addPre [NoHit])
-                    else second addPre $ upd ("", dic) $ BS.head inp
-                | otherwise     -> (("", ps'), [InProgress inp])
+                    then (("", [dic]), addPre [NoHit])
+                    else second addPre $ upd ("", [dic]) $ BS.head inp
+                | otherwise     -> (("", ps' : ps), [InProgress inp])
 
 prefixes :: BS.ByteString -> Trie a -> Trie a
 prefixes = lookupBy ((snd .) . (,))
