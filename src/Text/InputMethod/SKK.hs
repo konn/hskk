@@ -37,6 +37,7 @@ import           Control.Lens          ((?=))
 import           Control.Lens          ((<>=))
 import           Control.Lens          ((.=))
 import           Control.Lens          (use)
+import           Control.Lens          (isn't)
 import           Control.Lens.Extras   (is)
 import           Control.Monad.State
 import           Control.Zipper
@@ -58,6 +59,8 @@ import qualified Data.Text.Encoding    as T
 import           Data.Trie             hiding (lookup, null)
 import qualified Data.Trie             as Trie
 import           Data.Tuple            (swap)
+import           Debug.Trace           (traceShow)
+import           Debug.Trace           (trace)
 import           FRP.Ordrea            (Event, SignalGen)
 import           FRP.Ordrea            (eventFromList, newExternalEvent,
                                         triggerExternalEvent)
@@ -149,7 +152,8 @@ romanConv d0@(KanaTable dic) mode s (BS.singleton . fromJust -> inp) =
       let out   = a ^. convChar mode
           app d = maybe (d :) (:) $ flip prefixes d . BS.singleton <$> a ^. nextState
       in if Trie.null ps'
-         then mkKanaState "" (app dic []) [Converted out]
+         then mkKanaState "" (app dic []) $ Converted out :
+              maybe [] (pure . InProgress . BS.singleton) (a ^. nextState)
          else (s & leftover .~ out & dicts %~ app ps' & previous .~ [InProgress inp],
                [InProgress inp])
     Nothing | Trie.null ps' ->
@@ -185,6 +189,7 @@ data SKKState = SKKState { _kanaState  :: Maybe KanaState
                          , _slashed    :: Bool
                          } deriving (Typeable)
 makeLenses ''SKKState
+makePrisms ''SKKResult
 
 newSKKState :: SKKState
 newSKKState = SKKState Nothing Nothing Nothing Nothing False
@@ -234,7 +239,7 @@ viewS c s
     else if length (curPage ^. focus) == 1
     then TakeFirst curPage `AndThen` NormalInput
     else Select c curPage       -- Select candidate
-  | c == '/' && not (s ^. converting) = StartSlash
+  | c == '/' && not (s ^. converting) && not (s ^. kanaing) = StartSlash
   | c == '\n' && s ^. converting = Complete
   | c == '\DEL' && s ^. converting =
       if s ^. hasOkuri
@@ -250,6 +255,8 @@ viewS c s
   | s ^. converting && s ^. slashed = SlashInput
   | s ^. converting && not (s ^. hasOkuri) = ConvertInput
   | s ^. converting && s ^. hasOkuri = OkuriInput
+  | c == '\DEL' && not (s ^. kanaing) = Noop
+  | c == '\DEL' = Noop
   | otherwise = NormalInput
 
 (<||>) :: Monoid t1 => Maybe (t, t1) -> Maybe (t, t1) -> Maybe (t, t1)
@@ -418,13 +425,13 @@ skkConv table kana dic pager select s0 c = swap $ runState (go (viewS c s0)) s0
     toKana mc = do
       ks <- fromMaybe (newKanaState table) <$> use kanaState
       let (ks', rs) = romanConv table kana ks mc
-          (prgs, cvd) = partition (is _InProgress) rs
+          (prgs, cvd) = partition (is _InProgress) $ trace ("results: " ++ prettyStates rs) $ rs
           finished = T.concat $ map toT cvd
           toT NoHit          = T.singleton c
           toT Deleted        = ""
           toT (InProgress _) = T.singleton c
           toT (Converted t)  = t
-      if null prgs && all (\k -> k `notElem` [Deleted]) cvd
+      if null prgs && all (isn't _Deleted) cvd
         then do
           kanaState .= Nothing
           return $ Right finished
@@ -509,3 +516,6 @@ prettyText str = "\"" <> str <> "\""
 prettyState :: KanaResult -> String
 prettyState (Converted a) = T.unpack $ "Converted " <> prettyText a
 prettyState w             = show w
+
+prettyStates :: [KanaResult] -> String
+prettyStates ss = T.unpack $ "[" <> T.intercalate ", " (map (T.pack . prettyState) ss) <> "]"
