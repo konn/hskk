@@ -118,24 +118,28 @@ convChar Katakana = kataConv
 convChar HankakuKatakana = hanKataConv
 
 data KanaState = KanaState { _leftover :: T.Text
+                           , _previous :: [KanaResult]
                            , _dicts    :: [Trie KanaEntry]
                            } deriving (Show, Eq, Typeable)
 makeLenses ''KanaState
 
 newKanaState :: KanaTable -> KanaState
-newKanaState = KanaState "" . (:[]) . view kanaDic
+newKanaState = KanaState "" [] . (:[]) . view kanaDic
 
 mapAccumE' :: (s -> a -> (s, b)) -> s -> Event a -> SignalGen (Event b)
 mapAccumE' fun s0 e = mapAccumE s0 (flip fun <$> e)
 
 romanConvE :: KanaTable -> ConvMode -> Event Char -> SignalGen (Event [KanaResult])
-romanConvE dic mode input = mapAccumE' (romanConv dic mode) (newKanaState dic) input
+romanConvE dic mode input = mapAccumE' (romanConv dic mode) (newKanaState dic) (Just <$> input)
 
-romanConv :: KanaTable -> ConvMode -> KanaState -> Char -> (KanaState, [KanaResult])
-romanConv _ _ s '\DEL'
-  | [_] <- s ^. dicts = (s, [NoHit])
-  | otherwise         = (s & dicts %~ tail, [Deleted])
-romanConv d0@(KanaTable dic) mode s (BS.singleton -> inp) =
+romanConv :: KanaTable -> ConvMode -> KanaState -> Maybe Char -> (KanaState, [KanaResult])
+romanConv table _ s Nothing
+  | not (T.null $ s ^. leftover) = mkKanaState "" [table ^. kanaDic] [Converted $ s^. leftover]
+  | otherwise = (s, s ^. previous)
+romanConv _ _ s (Just '\DEL')
+  | [_] <- s ^. dicts = (s & previous .~ [NoHit], [NoHit])
+  | otherwise         = (s & dicts %~ tail & previous .~ [Deleted], [Deleted])
+romanConv d0@(KanaTable dic) mode s (BS.singleton . fromJust -> inp) =
   let (mans, ps') = lookupBy (,) inp $ s ^. dicts. to head
       pre = s ^. leftover
       addPre | T.null pre = id
@@ -145,13 +149,20 @@ romanConv d0@(KanaTable dic) mode s (BS.singleton -> inp) =
       let out   = a ^. convChar mode
           app d = maybe (d :) (:) $ flip prefixes d . BS.singleton <$> a ^. nextState
       in if Trie.null ps'
-         then  (KanaState "" $ app dic [], [Converted out])
-         else (s & leftover .~ out & dicts %~ app ps', [InProgress inp])
+         then mkKanaState "" (app dic []) [Converted out]
+         else (s & leftover .~ out & dicts %~ app ps' & previous .~ [InProgress inp],
+               [InProgress inp])
     Nothing | Trie.null ps' ->
                 if Trie.null (submap inp dic)
-                then (newKanaState (KanaTable dic), addPre [NoHit])
-                else second addPre $ romanConv d0 mode (newKanaState $ KanaTable dic) $ BS.head inp
-            | otherwise     -> (s & leftover .~ "" & dicts %~ (ps':), [InProgress inp])
+                then mkKanaState "" [dic] $ addPre [NoHit]
+                else (previous %~ addPre) *** addPre $
+                     romanConv d0 mode (newKanaState $ KanaTable dic) $
+                     Just $ BS.head inp
+            | otherwise     -> (s & leftover .~ "" & dicts %~ (ps':) & previous .~ [InProgress inp],
+                                [InProgress inp])
+
+mkKanaState :: T.Text -> [Trie KanaEntry] -> [KanaResult] -> (KanaState, [KanaResult])
+mkKanaState str hoge out = (KanaState str out hoge, out)
 
 prefixes :: BS.ByteString -> Trie a -> Trie a
 prefixes = lookupBy ((snd .) . (,))
@@ -198,6 +209,8 @@ data View = NextPage (Top :>> [[T.Text]] :>> [T.Text])
           | OkuriInput
           | AndThen View View
           | NormalInput
+          | StartConvert
+          | StartOkuri
           | DeleteOkuri
           | DeleteConvert
           | Complete
@@ -216,7 +229,7 @@ viewS c s
     then PrevPage curPage
     else if c == '\n'           -- Take first candidate
     then TakeFirst curPage
-    else if isUpper c && length (curPage ^. focus) == 1
+    else if isUpper c && length (curPage ^. focus) == 1 && not (s ^. kanaing)
     then TakeFirst curPage `AndThen` ConvertInput
     else if length (curPage ^. focus) == 1
     then TakeFirst curPage `AndThen` NormalInput
@@ -231,9 +244,9 @@ viewS c s
   | c == ' ' && s ^. converting        = Convert (s ^. convBuf._Just) (s ^. okuriState)
                                          -- Convert inputted somethings
   | c == 'q' && s ^. converting && not (s ^. hasOkuri) = ToggleKana
-  | isUpper c && not (s ^. kanaing) &&
-    s ^. converting && not (s ^. hasOkuri) &&
-    not (s ^. selecting) &&  not (s ^. slashed)  = OkuriInput
+  | isUpper c && s ^. converting && not (s ^. hasOkuri) &&
+    (s ^. convBuf)  /= Just "" &&
+    not (s ^. selecting) &&  not (s ^. slashed)  = StartOkuri `AndThen` OkuriInput
   | s ^. converting && s ^. slashed = SlashInput
   | s ^. converting && not (s ^. hasOkuri) = ConvertInput
   | s ^. converting && s ^. hasOkuri = OkuriInput
@@ -247,7 +260,7 @@ a <||> Nothing = a
 skkConv :: KanaTable -> ConvMode -> Dictionary
         -> Pager -> CandidateSelector
         -> SKKState -> Char -> (SKKState, [SKKResult])
-skkConv table kana dic pager select s c = swap $ runState (go (viewS c s)) s
+skkConv table kana dic pager select s0 c = swap $ runState (go (viewS c s0)) s0
   where
     showPage str = do
       mokBuf <- use okuriState
@@ -269,6 +282,22 @@ skkConv table kana dic pager select s c = swap $ runState (go (viewS c s)) s
     go Complete = do
       buf <- fromMaybe "" <$> use convBuf
       complete buf
+    go StartConvert = do
+      mans <- toKana Nothing
+      case mans of
+        Right a | not (T.null a) -> return [ Idle [ Converted a ] ]
+        _ -> return []
+    go StartOkuri = do
+      mans <- toKana Nothing
+      case mans of
+        Right a | not (T.null a) -> do
+          convBuf <>= Just a
+          return []
+        Left (comp, lo) | not (T.null lo) -> do
+          convBuf <>= Just comp
+          okuriState ?= (T.head lo, "")
+          return []
+        _ -> return []
     go ToggleKana = do
       buf <- fromMaybe "" <$> use convBuf
       complete $ toggleKana kana buf
@@ -336,7 +365,7 @@ skkConv table kana dic pager select s c = swap $ runState (go (viewS c s)) s
         Nothing -> showPage $ curPage ^. focus
         Just t  -> complete t
     go ConvertInput = do
-      rslt <- toKana
+      rslt <- toKana $ Just (toLower c)
       case rslt of
         Right ans -> do
           convBuf <>= Just ans
@@ -344,47 +373,51 @@ skkConv table kana dic pager select s c = swap $ runState (go (viewS c s)) s
         Left (comp, temp) -> do
           convBuf <>= Just comp
           convertingWith temp
-    go (Convert body mok) = case mok of
-      Nothing ->
-        let mcss = pager . map (view tango) .
-                   filter (is _Candidate) <$>
-                   lookup (Input body Nothing) dic
-        in case mcss of
-          Nothing -> notFound body Nothing
-          Just css -> do
-            selection ?= (zipper css & fromWithin traverse)
-            showPage $ head css
-      Just (okCh, okBuf) ->
-        case pager <$> lookup' (Input body $ Just $ toLower okCh) okBuf dic of
-          Just css -> do
-            okuriState ?= (okCh, okBuf)
-            selection  ?= (zipper css & fromWithin traverse)
-            showPage $ (head css)
-          Nothing -> do
-            okuriState ?= (okCh, okBuf)
-            notFound body (Just (okCh, okBuf))
+    go (Convert body0 mok) = do
+      elo <- toKana Nothing
+      let lo = either fst id elo
+      case mok of
+        Nothing ->
+          let body = body0 <> lo
+              mcss = pager . map (view tango) .
+                     filter (is _Candidate) <$>
+                     lookup (Input body Nothing) dic
+          in case mcss of
+            Nothing -> notFound body Nothing
+            Just css -> do
+              selection ?= (zipper css & fromWithin traverse)
+              showPage $ head css
+        Just (okCh, okBuf0) ->
+          let body = body0
+              okBuf = okBuf0 <> lo
+          in case pager <$> lookup' (Input body $ Just $ toLower okCh) okBuf dic of
+            Just css -> do
+              okuriState ?= (okCh, okBuf)
+              selection  ?= (zipper css & fromWithin traverse)
+              showPage $ head css
+            Nothing -> do
+              okuriState ?= (okCh, okBuf)
+              notFound body (Just (okCh, okBuf))
     go OkuriInput = do
-      let body = s ^. convBuf._Just
-      rslt <- toKana
+      body <- use $ convBuf._Just
+      okr  <- use okuriState
+      rslt <- toKana $ Just $ toLower c
       case rslt of
         Left (comp, temp) -> do
-          let (okCh, okBuf) =
-                maybe (c, comp) (second (<> comp)) $
-                s ^. okuriState
+          let (okCh, okBuf) = maybe (c, comp) (second (<> comp)) okr
           okuriState ?= (okCh, okBuf)
           okuriWith temp
         Right str -> do
-          let ok = maybe (c, str) (second (<> str)) $
-                   s ^. okuriState
+          let ok = maybe (c, str) (second (<> str)) okr
           go $ Convert body $ Just ok
     go NormalInput = do
       ks0 <- fromMaybe (newKanaState table) <$> use kanaState
-      let (ks', rs) = romanConv table kana ks0 c
+      let (ks', rs) = romanConv table kana ks0 (Just c)
       kanaState ?= ks'
       return [Idle rs]
-    toKana = do
+    toKana mc = do
       ks <- fromMaybe (newKanaState table) <$> use kanaState
-      let (ks', rs) = romanConv table kana ks $ toLower c
+      let (ks', rs) = romanConv table kana ks mc
           (prgs, cvd) = partition (is _InProgress) rs
           finished = T.concat $ map toT cvd
           toT NoHit          = T.singleton c

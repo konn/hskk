@@ -78,7 +78,8 @@ lookup' i@(Input _ Just{}) t d =
           mtargs = filter (is _Candidate) . view subCands <$>
                    find ((== t) . view okuri) subs
           targs = fromMaybe [] mtargs
-      in Just $ nub $ map (view tango) $ targs ++ ords
+          ans = nub $ map (view tango) $ targs ++ ords
+      in if null ans then Nothing else Just ans
 
 insert :: Input -> Candidate -> Dictionary -> Dictionary
 insert (Input k Nothing) v d =
