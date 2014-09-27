@@ -9,7 +9,7 @@ module Text.InputMethod.SKK
         -- * Converters
         romanConv, romanConvE, defKanaTable, convertTest,
         -- * Data-types and lenses
-        KanaEntry(..),ConvMode(..), KanaResult(..),
+        KanaEntry(..), ConvMode(..), KanaResult(..),
         _Converted, _NoHit, _InProgress, newInput,
         hiraConv, kataConv, hanKataConv, nextState,
         parseKanaTable, formatKanaTable, skkConv, skkConvE,
@@ -17,56 +17,54 @@ module Text.InputMethod.SKK
         -- * misc
         Pager, CandidateSelector, slice,
         ) where
-import           Control.Applicative             ((<$>))
-import           Control.Applicative             (pure)
-import           Control.Applicative             (Applicative)
-import           Control.Applicative             ((<*>))
-import           Control.Arrow                   (second)
-import           Control.Arrow                   ((>>>))
-import           Control.Arrow                   ((***))
-import           Control.Lens                    (makeLenses, makePrisms)
-import           Control.Lens                    (makeWrapped, to, view, (%~),
-                                                  _1, _2)
-import           Control.Lens                    ((&), (.~), (^.), (^?), _head)
-import           Control.Lens                    ((%=), _Just)
-import           Control.Lens                    (traverse)
-import           Control.Lens                    (ix)
-import           Control.Lens                    ((?=))
-import           Control.Lens                    ((<>=))
-import           Control.Lens                    ((.=))
-import           Control.Lens                    (use)
-import           Control.Lens                    ((<<>=))
-import           Control.Lens.Extras             (is)
+import Text.InputMethod.SKK.Dictionary
+import Text.InputMethod.SKK.Misc
+
+import           Control.Applicative   ((<$>))
+import           Control.Applicative   (pure)
+import           Control.Applicative   (Applicative)
+import           Control.Applicative   ((<*>))
+import           Control.Arrow         (second)
+import           Control.Arrow         ((>>>))
+import           Control.Arrow         ((***))
+import           Control.Lens          (makeLenses, makePrisms)
+import           Control.Lens          (makeWrapped, to, view, (%~), _1, _2)
+import           Control.Lens          ((&), (.~), (^.), (^?), _head)
+import           Control.Lens          ((%=), _Just)
+import           Control.Lens          (traverse)
+import           Control.Lens          (ix)
+import           Control.Lens          ((?=))
+import           Control.Lens          ((<>=))
+import           Control.Lens          ((.=))
+import           Control.Lens          (use)
+import           Control.Lens.Extras   (is)
 import           Control.Monad.State
 import           Control.Zipper
-import           Data.Attoparsec.Text            (parseOnly)
-import qualified Data.ByteString.Char8           as BS
-import           Data.Char                       (isAlpha, isAscii)
-import           Data.Char                       (isUpper)
-import           Data.Char                       (toLower)
-import           Data.Data                       (Data, Typeable)
-import           Data.List                       (partition)
-import           Data.List                       (elemIndex)
-import           Data.List                       (unfoldr)
-import           Data.Maybe                      (isJust)
-import           Data.Maybe                      (fromJust)
-import           Data.Maybe                      (fromMaybe)
-import           Data.Monoid                     (Monoid (..), (<>))
-import qualified Data.Text                       as T
-import qualified Data.Text.Encoding              as T
-import           Data.Trie                       hiding (lookup, null)
-import qualified Data.Trie                       as Trie
-import           Data.Tuple                      (swap)
-import           FRP.Ordrea                      (Event, SignalGen)
-import           FRP.Ordrea                      (eventFromList,
-                                                  newExternalEvent,
-                                                  triggerExternalEvent)
-import           FRP.Ordrea                      (eventToBehavior, externalE,
-                                                  justE, mapAccumE,
-                                                  networkToList, start)
-import           Language.Haskell.TH             (litE, runIO, stringL)
-import           Prelude                         hiding (lookup)
-import           Text.InputMethod.SKK.Dictionary
+import           Data.Attoparsec.Text  (parseOnly)
+import qualified Data.ByteString.Char8 as BS
+import           Data.Char             (isAlpha, isAscii)
+import           Data.Char             (isUpper)
+import           Data.Char             (toLower)
+import           Data.Data             (Data, Typeable)
+import           Data.List             (partition)
+import           Data.List             (elemIndex)
+import           Data.List             (unfoldr)
+import           Data.Maybe            (isJust)
+import           Data.Maybe            (fromJust)
+import           Data.Maybe            (fromMaybe)
+import           Data.Monoid           (Monoid (..), (<>))
+import qualified Data.Text             as T
+import qualified Data.Text.Encoding    as T
+import           Data.Trie             hiding (lookup, null)
+import qualified Data.Trie             as Trie
+import           Data.Tuple            (swap)
+import           FRP.Ordrea            (Event, SignalGen)
+import           FRP.Ordrea            (eventFromList, newExternalEvent,
+                                        triggerExternalEvent)
+import           FRP.Ordrea            (eventToBehavior, externalE, justE,
+                                        mapAccumE, networkToList, start)
+import           Language.Haskell.TH   (litE, runIO, stringL)
+import           Prelude               hiding (lookup)
 
 data KanaEntry = KanaEntry { _hiraConv    :: T.Text
                            , _kataConv    :: T.Text
@@ -93,8 +91,6 @@ instance Monoid KanaResult where
   mappend Deleted a = a
   mappend a Deleted = a
 
-data ConvMode = Hiragana | Katakana | HankakuKatakana
-              deriving (Read, Show, Eq, Ord, Data, Typeable)
 makeLenses ''ConvMode
 makePrisms ''ConvMode
 
@@ -208,6 +204,7 @@ data View = NextPage (Top :>> [[T.Text]] :>> [T.Text])
           | StartSlash
           | SlashInput
           | Noop
+          | ToggleKana
 
 viewS :: Char -> SKKState -> View
 viewS c s
@@ -233,6 +230,7 @@ viewS c s
   | isUpper c && not (s ^. converting) = ConvertInput -- Start new conversion phase
   | c == ' ' && s ^. converting        = Convert (s ^. convBuf._Just) (s ^. okuriState)
                                          -- Convert inputted somethings
+  | c == 'q' && s ^. converting && not (s ^. hasOkuri) = ToggleKana
   | isUpper c && not (s ^. kanaing) &&
     s ^. converting && not (s ^. hasOkuri) &&
     not (s ^. selecting) &&  not (s ^. slashed)  = OkuriInput
@@ -271,6 +269,9 @@ skkConv table kana dic pager select s c = swap $ runState (go (viewS c s)) s
     go Complete = do
       buf <- fromMaybe "" <$> use convBuf
       complete buf
+    go ToggleKana = do
+      buf <- fromMaybe "" <$> use convBuf
+      complete $ toggleKana kana buf
     go SlashInput = do
       convBuf <>= Just (T.singleton c)
       convertingWith ""

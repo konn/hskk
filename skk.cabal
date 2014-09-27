@@ -18,7 +18,7 @@ cabal-version:       >=1.10
 
 library
   exposed-modules:     Network.Skkserv, Text.InputMethod.SKK, Text.InputMethod.SKK.Dictionary
-  -- other-modules:       
+  other-modules:       Text.InputMethod.SKK.Misc
   -- other-extensions:    
   build-depends: base                       <4.8
              , async
