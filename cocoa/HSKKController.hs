@@ -1,8 +1,8 @@
 {-# LANGUAGE DataKinds, DeriveDataTypeable, EmptyDataDecls              #-}
 {-# LANGUAGE FlexibleContexts, FlexibleInstances, MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings, PatternGuards, QuasiQuotes, RecursiveDo #-}
-{-# LANGUAGE StandaloneDeriving, TemplateHaskell, TypeFamilies          #-}
-{-# LANGUAGE TypeOperators                                              #-}
+{-# LANGUAGE StandaloneDeriving, TemplateHaskell, TupleSections         #-}
+{-# LANGUAGE TypeFamilies, TypeOperators                                #-}
 {-# OPTIONS_GHC -fno-warn-unused-binds -fno-warn-orphans #-}
 module HSKKController ( objc_initialise ) where
 import Messaging
@@ -10,6 +10,7 @@ import Messaging
 import Text.InputMethod.SKK
 
 import           Control.Applicative    ((<$>))
+import           Control.Applicative    ((<*))
 import           Control.Lens           (isn't)
 import           Control.Lens           (makeLenses)
 import           Control.Lens           ((<>~))
@@ -21,8 +22,12 @@ import           Control.Monad.IO.Class (liftIO)
 import qualified Data.ByteString.Char8  as BS
 import           Data.Foldable          (foldlM)
 import qualified Data.Map               as M
+import           Data.Maybe             (fromMaybe)
 import           Data.Monoid            (mconcat)
+import           Data.Monoid            ((<>))
+import           Data.Monoid            ((<>))
 import qualified Data.Text              as T
+import qualified Data.Text.Encoding     as T
 import           Data.Typeable          (Typeable)
 import           FRP.Ordrea
 import           Language.C.Inline.ObjC
@@ -77,6 +82,8 @@ data KeyResult = KeyResult { curSession   :: Session
 data InputState = InputState { _markedBuffer :: BS.ByteString }
 makeLenses ''InputState
 
+defInputState = InputState ""
+
 newKeyResult :: Session -> Bool -> KeyResult
 newKeyResult = KeyResult
 
@@ -126,36 +133,51 @@ updaterFor sender dic
     eev <- newExternalEvent
     step <- start $ do
       input <- externalE eev
-      ev <- romanConv defKanaTable Katakana input
+      ev <- defSKKConvE input
       _ <- generatorE $ liftIO . nsLog . ("input: " ++) . show <$> ev
-      _ <- mapAccumEM (InputState "") (edited' <$> ev)
-      return $ isn't _NoHit . head <$> eventToBehavior (mconcat <$> ev)
+      _ <- generatorE $ mapM edited <$> ev
+      return $ (/= Idle [NoHit]) . head <$> eventToBehavior (flattenE ev)
     let push inp = triggerExternalEvent eev inp >> step
     return $ (push, M.insert sender push dic)
   where
-    edited' cs s0 = do
-      s' <- foldlM edited s0 cs
-      return (s', ())
-    edited s (Converted text) = do
-      let ans = T.unpack text
-      liftIO $ sender # setMarkedText ans (length ans) 0
-      liftIO $ sender # insertText ans
+    edited (Idle eds) = plainEdited' eds defInputState
+    edited (Page cands mokuri) = do
+      let msg | [a] <- cands = "▼" <> a <> fromMaybe "" mokuri
+              | otherwise    = "[候補: " <> T.intercalate " / "
+                               (zipWith (\a b -> T.singleton a <> ": " <> b) "asdfhjk"  cands) <> "]"
+                                <> fromMaybe "" mokuri
+      liftIO $ sender # setMarkedText (T.unpack msg) 0 (T.length msg)
+    edited (ConvNotFound _ _) = liftIO $ sender # setMarkedText "" 0 0
+    edited (Completed t) = do
+      liftIO $ sender # insertText (T.unpack t)
+    edited (Okuri body o) = do
+      let msg = "▽" <> body <> "*" <> o
+      liftIO $ sender # setMarkedText (T.unpack msg) 0 (T.length msg)
+    edited (Converting str) = do
+      let ans = "▽" <> str
+      liftIO $ sender # setMarkedText (T.unpack ans) 0 (T.length ans)
+    plainEdited' cs s0 = do
+      _ <- foldlM plainEdited s0 cs
+      return ()
+    plainEdited s (Converted text) = do
+      liftIO $ sender # insertText (T.unpack text)
       return $ s & markedBuffer .~ ""
-    edited s Deleted
+    plainEdited s Deleted
       | not $ BS.null (s ^. markedBuffer) = do
         let s' = s & markedBuffer %~ BS.init
             buf = s' ^. markedBuffer
         liftIO $ sender # setMarkedText (BS.unpack buf) 0 (BS.length buf)
         return s'
-    edited s (InProgress c)   = do
+    plainEdited s (InProgress c)   = do
       let s'  = s & markedBuffer <>~ c
           buf = s' ^. markedBuffer
-      liftIO $ nsLog $ "temp buf: " ++ BS.unpack buf
-      liftIO $ sender # setMarkedText (BS.unpack buf) 0 (BS.length buf)
+      liftIO $ do
+        nsLog $ "temp buf: " ++ BS.unpack buf
+        sender # setMarkedText (BS.unpack buf) 0 (BS.length buf)
       return s'
-    edited s NoHit =
+    plainEdited s NoHit =
       return $ s & markedBuffer .~ ""
-    edited s _ = return  s
+    plainEdited s _ = return  s
 
 deleteKey :: Session -> NSObject -> IO KeyResult
 deleteKey session client = pushKey session client "\DEL"

@@ -1,6 +1,11 @@
 {-# LANGUAGE DeriveDataTypeable, DeriveGeneric, OverloadedStrings #-}
 {-# LANGUAGE StandaloneDeriving, TemplateHaskell                  #-}
-module Text.InputMethod.SKK.Dictionary where
+module Text.InputMethod.SKK.Dictionary
+       (Dictionary(..), Input(..), Candidate(..),
+        gokan, okurigana, emptyDic, lookup, lookup',
+        tango, chushaku, okuri, subCands, dictionary,
+        sDictionary, okuriAriDic, okuriNasiDic, insert,
+        formatDictionary, _Candidate, _OkuriSub, formatCandidate) where
 import           Control.Applicative  ((*>), (<$), (<$>), (<*), (<*>), (<|>))
 import           Control.Lens
 import           Control.Lens.Extras  (is)
