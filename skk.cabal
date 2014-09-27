@@ -12,31 +12,39 @@ maintainer:          konn.jinro_at_gmail.com
 -- copyright:           
 category:            Text
 build-type:          Simple
--- extra-source-files:  
+extra-source-files:  data/SKK-JISYO.S, data/kana-rule.conf
+data-dir:            data
 cabal-version:       >=1.10
 
 library
   exposed-modules:     Network.Skkserv, Text.InputMethod.SKK, Text.InputMethod.SKK.Dictionary
   -- other-modules:       
   -- other-extensions:    
-  build-depends:       base >=4.7 && <4.8,
-                       text >=1.1 && <1.2, 
-                       lens, 
-                       attoparsec, 
-                       hashable, async,
-                       unordered-containers,
-                       ordrea, 
-                       bytestring,
-                       resourcet,
-                       network,
-                       transformers,
-                       template-haskell,
-                       bytestring-trie
+  build-depends: base                       <4.8
+             , async
+             , attoparsec
+             , bytestring
+             , bytestring-trie
+             , hashable
+             , lens
+             , network
+             , ordrea
+             , resourcet
+             , template-haskell
+             , text >=1.1 && <1.2
+             , transformers
+             , unordered-containers
+             , zippers >= 0.2, mtl
   hs-source-dirs:      src
   default-language:    Haskell2010
 
 Executable simpleserv
-  build-depends:       base, fsnotify, filepath, ordrea, stm, text, skk
+  build-depends:                      filepath
+             , ordrea
+             , skk
+             , stm
+             , text
+             , zippers >= 0.2
   Main-is:             simplesrv.hs
   hs-source-dirs:      examples
   default-language:    Haskell2010
@@ -50,9 +58,9 @@ Executable hSKK
                        filepath,
                        ordrea,
                        stm,
-                       text,base >=4.7 && <4.8,
+                       base >=4.7 && <4.8,
                        text >=1.1 && <1.2, 
-                       lens, 
+                       lens,
                        attoparsec, 
                        hashable, async,
                        unordered-containers,
@@ -65,7 +73,8 @@ Executable hSKK
                        language-c-inline,
                        language-c-quote,
                        template-haskell,
-                       containers
+                       containers,
+                       zippers
   Main-is:             Main.hs
   other-modules:       App,
                        AppDelegate,

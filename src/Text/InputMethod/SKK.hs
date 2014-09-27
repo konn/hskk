@@ -1,42 +1,73 @@
-{-# LANGUAGE DeriveDataTypeable, FlexibleInstances, GADTs              #-}
-{-# LANGUAGE MultiParamTypeClasses, OverloadedStrings, TemplateHaskell #-}
-{-# LANGUAGE TypeFamilies, ViewPatterns                                #-}
+{-# LANGUAGE DeriveDataTypeable, FlexibleInstances, GADTs                #-}
+{-# LANGUAGE LiberalTypeSynonyms, MultiParamTypeClasses                  #-}
+{-# LANGUAGE NoMonomorphismRestriction, OverloadedStrings, PatternGuards #-}
+{-# LANGUAGE PatternSynonyms, RankNTypes, TemplateHaskell, TypeFamilies  #-}
+{-# LANGUAGE TypeOperators, ViewPatterns                                 #-}
 module Text.InputMethod.SKK
        (module Text.InputMethod.SKK.Dictionary,
         toInput, parseDictionary,
         -- * Converters
-        romanConv, defKanaTable, convertTest,
+        romanConv, romanConvE, defKanaTable, convertTest,
         -- * Data-types and lenses
-        KanaEntry(..),ConvMode(..), ConvState(..),
+        KanaEntry(..),ConvMode(..), KanaResult(..),
         _Converted, _NoHit, _InProgress, newInput,
         hiraConv, kataConv, hanKataConv, nextState,
-        KanaTable(..), kanaDic) where
+        parseKanaTable, formatKanaTable, skkConv, skkConvE,
+        KanaTable(..), kanaDic, SKKResult(..), defSKKConvE,
+        -- * misc
+        Pager, CandidateSelector
+        ) where
 import           Control.Applicative             ((<$>))
+import           Control.Applicative             (pure)
+import           Control.Applicative             (Applicative)
+import           Control.Applicative             ((<*>))
 import           Control.Arrow                   (second)
+import           Control.Arrow                   ((>>>))
+import           Control.Arrow                   ((***))
 import           Control.Lens                    (makeLenses, makePrisms)
-import           Control.Lens                    (makeWrapped, (^.))
-import           Control.Lens                    ((%~), (^?), _head, _tail)
-import           Control.Lens                    (each)
-import           Control.Lens                    (view)
-import           Control.Monad                   (liftM)
+import           Control.Lens                    (makeWrapped, to, view, (%~),
+                                                  _1, _2)
+import           Control.Lens                    ((&), (.~), (^.), (^?), _head)
+import           Control.Lens                    ((%=), _Just)
+import           Control.Lens                    (traverse)
+import           Control.Lens                    (ix)
+import           Control.Lens                    ((?=))
+import           Control.Lens                    ((<>=))
+import           Control.Lens                    ((.=))
+import           Control.Lens                    (use)
+import           Control.Lens                    ((<<>=))
+import           Control.Lens                    ((^..))
+import           Control.Lens.Extras             (is)
+import           Control.Monad.State
+import           Control.Zipper
 import           Data.Attoparsec.Text            (parseOnly)
 import qualified Data.ByteString.Char8           as BS
 import           Data.Char                       (isAlpha, isAscii)
+import           Data.Char                       (isUpper)
+import           Data.Char                       (toLower)
 import           Data.Data                       (Data, Typeable)
-import           Data.Monoid                     ((<>))
-import           Data.Monoid                     (Monoid (..))
+import           Data.List                       (partition)
+import           Data.List                       (elemIndex)
+import           Data.List                       (unfoldr)
+import           Data.Maybe                      (isJust)
+import           Data.Maybe                      (fromJust)
+import           Data.Maybe                      (fromMaybe)
+import           Data.Monoid                     (Monoid (..), (<>))
 import qualified Data.Text                       as T
 import qualified Data.Text.Encoding              as T
-import           Data.Trie
+import           Data.Trie                       hiding (lookup, null)
 import qualified Data.Trie                       as Trie
-import           FRP.Ordrea                      (start)
+import           Data.Tuple                      (swap)
+import           Debug.Trace                     (trace)
 import           FRP.Ordrea                      (Event, SignalGen)
 import           FRP.Ordrea                      (eventFromList,
                                                   newExternalEvent,
                                                   triggerExternalEvent)
-import           FRP.Ordrea                      (eventToBehavior, justE)
-import           FRP.Ordrea                      (mapAccumE, networkToList)
-import           FRP.Ordrea                      (externalE)
+import           FRP.Ordrea                      (eventToBehavior, externalE,
+                                                  justE, mapAccumE,
+                                                  networkToList, start)
+import           Language.Haskell.TH             (litE, runIO, stringL)
+import           Prelude                         hiding (lookup)
 import           Text.InputMethod.SKK.Dictionary
 
 data KanaEntry = KanaEntry { _hiraConv    :: T.Text
@@ -47,13 +78,13 @@ data KanaEntry = KanaEntry { _hiraConv    :: T.Text
 
 makeLenses ''KanaEntry
 
-data ConvState = Converted T.Text | NoHit | InProgress BS.ByteString | Deleted
+data KanaResult = Converted T.Text | NoHit | InProgress BS.ByteString | Deleted
                deriving (Read, Show, Eq, Ord, Data, Typeable)
 
-makeLenses ''ConvState
-makePrisms ''ConvState
+makeLenses ''KanaResult
+makePrisms ''KanaResult
 
-instance Monoid ConvState where
+instance Monoid KanaResult where
   mempty = NoHit
   mappend NoHit a = a
   mappend a NoHit = a
@@ -92,291 +123,291 @@ convChar Hiragana = hiraConv
 convChar Katakana = kataConv
 convChar HankakuKatakana = hanKataConv
 
-romanConv :: KanaTable -> ConvMode -> Event Char -> SignalGen (Event [ConvState])
-romanConv (KanaTable dic) mode input = mapAccumE ("", [dic]) (flip upd <$> input)
-  where
-    upd (pre, [a]) '\DEL' = ((pre, [a]), [NoHit])
-    upd (pre, ds) '\DEL' = ((pre, tail ds), [Deleted])
-    upd (pre, ps) (BS.singleton -> inp) =
-      let (mans, ps') = lookupBy (,) inp $ head ps
-          addPre | T.null pre = id
-                 | otherwise  = (Converted pre :)
-      in case mans of
-        Just a ->
-          let out   = a ^. convChar mode
-              app d = maybe (d :) (:) $ flip prefixes d . BS.singleton <$> a ^. nextState
-          in if Trie.null ps'
-             then  (("", app dic []), [Converted out])
-             else ((out, app ps' ps), [InProgress inp])
-        Nothing | Trie.null ps' ->
-                    if Trie.null (submap inp dic)
-                    then (("", [dic]), addPre [NoHit])
-                    else second addPre $ upd ("", [dic]) $ BS.head inp
-                | otherwise     -> (("", ps' : ps), [InProgress inp])
+data KanaState = KanaState { _leftover :: T.Text
+                           , _dicts    :: [Trie KanaEntry]
+                           } deriving (Show, Eq, Typeable)
+makeLenses ''KanaState
+
+newKanaState :: KanaTable -> KanaState
+newKanaState = KanaState "" . (:[]) . view kanaDic
+
+mapAccumE' :: (s -> a -> (s, b)) -> s -> Event a -> SignalGen (Event b)
+mapAccumE' fun s0 e = mapAccumE s0 (flip fun <$> e)
+
+romanConvE :: KanaTable -> ConvMode -> Event Char -> SignalGen (Event [KanaResult])
+romanConvE dic mode input = mapAccumE' (romanConv dic mode) (newKanaState dic) input
+
+romanConv :: KanaTable -> ConvMode -> KanaState -> Char -> (KanaState, [KanaResult])
+romanConv _ _ s '\DEL'
+  | [_] <- s ^. dicts = (s, [NoHit])
+  | otherwise         = (s & dicts %~ tail, [Deleted])
+romanConv d0@(KanaTable dic) mode s (BS.singleton -> inp) =
+  let (mans, ps') = lookupBy (,) inp $ s ^. dicts. to head
+      pre = s ^. leftover
+      addPre | T.null pre = id
+             | otherwise  = (Converted pre :)
+  in case mans of
+    Just a ->
+      let out   = a ^. convChar mode
+          app d = maybe (d :) (:) $ flip prefixes d . BS.singleton <$> a ^. nextState
+      in if Trie.null ps'
+         then  (KanaState "" $ app dic [], [Converted out])
+         else (s & leftover .~ out & dicts %~ app ps', [InProgress inp])
+    Nothing | Trie.null ps' ->
+                if Trie.null (submap inp dic)
+                then (newKanaState (KanaTable dic), addPre [NoHit])
+                else second addPre $ romanConv d0 mode (newKanaState $ KanaTable dic) $ BS.head inp
+            | otherwise     -> (s & leftover .~ "" & dicts %~ (ps':), [InProgress inp])
 
 prefixes :: BS.ByteString -> Trie a -> Trie a
 prefixes = lookupBy ((snd .) . (,))
 
+type Pager = forall a. [a] -> [[a]]
+type CandidateSelector = forall a. Char -> [a] -> Maybe a
+
+data SKKResult = Idle [KanaResult]
+               | Converting T.Text
+               | Okuri T.Text T.Text
+               | Completed T.Text
+               | Page [T.Text]
+               | ConvNotFound T.Text (Maybe (Char, T.Text))
+               deriving (Read, Show, Eq, Ord, Data, Typeable)
+
+data SKKState = SKKState { _kanaState  :: Maybe KanaState
+                         , _okuriState :: Maybe (Char, T.Text)
+                         , _convBuf    :: Maybe T.Text
+                         , _selection  :: Maybe (Top :>> [[T.Text]] :>> [T.Text])
+                         } deriving (Typeable)
+makeLenses ''SKKState
+
+newSKKState :: SKKState
+newSKKState = SKKState Nothing Nothing Nothing Nothing
+
+okuriBuf :: Applicative f => (T.Text -> f T.Text) -> SKKState -> f SKKState
+okuriBuf = okuriState . _Just . _2
+
+okuriChar :: Applicative f => (Char -> f Char) -> SKKState -> f SKKState
+okuriChar = okuriState . _Just . _1
+
+hasOkuri = okuriState . to isJust
+converting = convBuf . to isJust
+selecting = selection . to isJust
+
+data View = NextPage (Top :>> [[T.Text]] :>> [T.Text])
+          | PrevPage (Top :>> [[T.Text]] :>> [T.Text])
+          | TakeFirst (Top :>> [[T.Text]] :>> [T.Text])
+          | Select Char (Top :>> [[T.Text]] :>> [T.Text])
+          | ConvertInput
+          | Convert T.Text (Maybe (Char, T.Text))
+          | OkuriInput
+          | AndThen View View
+          | NormalInput
+          | DeleteOkuri
+          | DeleteConvert
+          | Noop
+
+viewS :: Char -> SKKState -> View
+viewS c s
+  | s ^. selecting =            -- In candidate selection...
+    let curPage = fromJust (s ^. selection)
+    in if c == ' '              -- Go next page
+    then NextPage curPage
+    else if c == '\DEL'         -- Go back page
+    then PrevPage curPage
+    else if c == '\n'           -- Take first candidate
+    then TakeFirst curPage
+    else  if isUpper c
+    then TakeFirst curPage `AndThen` ConvertInput
+    else Select c curPage       -- Select candidate
+  | c == '\DEL' && s ^. converting =
+      if s ^. hasOkuri
+      then DeleteOkuri
+      else DeleteConvert
+  | isUpper c && not (s ^. converting) = ConvertInput -- Start new conversion phase
+  | c == ' ' && s ^. converting        = Convert (s ^. convBuf._Just) (s ^. okuriState)
+                                         -- Convert inputted somethings
+  | isUpper c && s ^. converting && not (s ^. hasOkuri) && not (s ^. selecting)  = OkuriInput
+  | s ^. converting && not (s ^. hasOkuri) = ConvertInput
+  | s ^. converting && s ^. hasOkuri = OkuriInput
+  | otherwise = NormalInput
+
+(<||>) :: Monoid t1 => Maybe (t, t1) -> Maybe (t, t1) -> Maybe (t, t1)
+Just (c, str) <||> Just (_, str') = Just (c, str <> str')
+Nothing <||> a = a
+a <||> Nothing = a
+
+skkConv :: KanaTable -> ConvMode -> Dictionary
+        -> Pager -> CandidateSelector
+        -> SKKState -> Char -> (SKKState, [SKKResult])
+skkConv table kana dic pager select s c = swap $ runState (go (viewS c s)) s
+  where
+    complete str = do
+      a <- use okuriState
+      put newSKKState
+      return [Completed $ str <> maybe "" snd a]
+    outOkuriWith temp = do
+      body  <- use convBuf
+      okBuf <- use okuriBuf
+      return [Okuri (fromMaybe "" body) (okBuf <> temp)]
+    outConvertWith temp = do
+      buf <- use convBuf
+      return [Converting $ (fromMaybe "" buf) <> temp]
+    go (AndThen p q) = (++) <$> go p <*> go q
+    go Noop = return [Idle [NoHit]]
+    go DeleteConvert = trace "You ordered DeleteConvert" $ do
+      buf <- fromMaybe "" <$> use convBuf
+      kdic <- use kanaState
+      case kdic of
+        Just _
+          | not (T.null buf) -> go ConvertInput
+          | otherwise -> do
+            convBuf ?= ""
+            outConvertWith ""
+        Nothing ->
+          if T.null buf
+            then do
+              convBuf .= Nothing
+              put newSKKState
+              return [Idle [Deleted]]
+            else do
+              convBuf %= fmap T.init
+              outConvertWith ""
+    go DeleteOkuri = trace "You ordered DeleteOkuri" $ do
+      buf <- use okuriBuf
+      kdic <- use kanaState
+      case kdic of
+        Just _
+          | not (T.null buf) -> go OkuriInput
+        _ ->
+          if T.null buf
+            then do
+              okuriState .= Nothing
+              kanaState  .= Nothing
+              outConvertWith ""
+            else do
+              okuriState %= fmap (second T.init)
+              outOkuriWith ""
+    go (NextPage curPage) =
+      case curPage & rightward of
+        Nothing -> return [Page $ curPage ^. focus]
+        Just pg -> do
+           selection ?= pg
+           return [Page $ pg ^. focus]
+    go (PrevPage curPage) =
+      case curPage & leftward of
+        Nothing -> return [Page $ curPage ^. focus]
+        Just pg -> do
+          selection ?= pg
+          return [Page $ pg ^. focus]
+    go (TakeFirst curPage) = do
+      complete $ curPage ^. focus._head
+    go (Select n curPage) =
+      case select n $ curPage ^. focus of
+        Nothing -> return [Page $ curPage ^. focus]
+        Just t  -> complete t
+    go ConvertInput = do
+      rslt <- toKana
+      case rslt of
+        Right ans -> do
+          convBuf <>= Just ans
+          outConvertWith ""
+        Left (comp, temp) -> do
+          convBuf <>= Just comp
+          outConvertWith temp
+    go (Convert body mok) = trace "You ordered Convert" $ case mok of
+      Nothing ->
+        let mcss = pager . map (view tango) .
+                   filter (is _Candidate) <$>
+                   lookup (Input body Nothing) dic
+        in case mcss of
+          Nothing -> return [ConvNotFound body Nothing]
+          Just css -> do
+            selection ?= (zipper css & fromWithin traverse)
+            return [Page $ head css]
+      Just (okCh, okBuf) ->
+        case pager <$> lookup' (Input body $ Just $ toLower okCh) okBuf dic of
+          Just css -> do
+            okuriState ?= (okCh, okBuf)
+            selection  ?= (zipper css & fromWithin traverse)
+            return [Page $ head css]
+          Nothing -> do
+            okuriState ?= (okCh, okBuf)
+            return [ConvNotFound body (Just (okCh, okBuf))]
+    go OkuriInput = trace "You ordered OkuriInput" $  do
+      let body = s ^. convBuf._Just
+      rslt <- toKana
+      case rslt of
+        Left (comp, temp) -> do
+          let (okCh, okBuf) =
+                maybe (c, comp) (second (<> comp)) $
+                s ^. okuriState
+          okuriState ?= (okCh, okBuf)
+          outOkuriWith temp
+        Right str -> do
+          let ok = maybe (c, str) (second (<> str)) $
+                   s ^. okuriState
+          go $ Convert body $ Just ok
+    go NormalInput = do
+      ks0 <- fromMaybe (newKanaState table) <$> use kanaState
+      let (ks', rs) = romanConv table kana ks0 c
+      kanaState ?= ks'
+      return [Idle rs]
+    toKana = do
+      ks <- fromMaybe (newKanaState table) <$> use kanaState
+      let (ks', rs) = romanConv table kana ks $ toLower c
+          (prgs, cvd) = partition (is _InProgress) rs
+          finished = T.concat $ map toT cvd
+          toT NoHit          = T.singleton c
+          toT Deleted        = ""
+          toT (InProgress _) = T.singleton c
+          toT (Converted t)  = t
+      if null prgs && all (\k -> k `notElem` [NoHit, Deleted]) cvd
+        then do
+          kanaState .= Nothing
+          return $ Right finished
+        else do
+          kanaState ?= ks'
+          return $ Left (finished, T.decodeUtf8 (BS.concat $ map (view _InProgress) prgs))
+
+defSKKConvE :: Event Char -> SignalGen (Event [SKKResult])
+defSKKConvE = skkConvE defKanaTable Hiragana sDictionary pager sel
+  where
+    pager = splitAt 4 >>> map pure *** slice 7 >>> uncurry (++)
+    sel c cs = (cs ^?) . ix =<< elemIndex c "asdfjkl"
+
+slice :: Int -> [a] -> [[a]]
+slice n = unfoldr phi
+  where
+    phi [] = Nothing
+    phi ys = Just $ splitAt n ys
+
+skkConvE :: KanaTable -> ConvMode -> Dictionary
+         -> Pager -> CandidateSelector
+         -> Event Char -> SignalGen (Event [SKKResult])
+skkConvE table mode dic pag sel input
+  = mapAccumE' (skkConv table mode dic pag sel) newSKKState input
+
 convertTest :: ConvMode -> String -> IO T.Text
-convertTest mode inp = liftM (T.concat . head) . networkToList (length inp) $ eventToBehavior <$> inputText mode inp
+convertTest mode inp
+  = liftM (T.concat . head) . networkToList (length inp) $
+    eventToBehavior <$> inputText mode inp
 
 inputText :: ConvMode -> String -> SignalGen (Event T.Text)
 inputText mode inp = do
   inps <- eventFromList [inp]
-  ev <- romanConv defKanaTable mode inps
+  ev <- romanConvE defKanaTable mode inps
   return $ justE $ (^? _Converted) . mconcat <$> ev
 
-newInput :: IO (Char -> IO [ConvState])
-newInput = do
+newInput :: (Event Char -> SignalGen (Event a)) -> IO (Char -> IO a)
+newInput toEv = do
   eev <- newExternalEvent
   step <- start $ do
     input <- externalE eev
-    fmap head . eventToBehavior <$> romanConv defKanaTable Katakana input
+    fmap head . eventToBehavior <$> toEv input
   return $ \inp -> triggerExternalEvent eev inp >> step
 
 defKanaTable :: KanaTable
-defKanaTable = KanaTable $ fromList
-               [(",", KanaEntry "、" "、" "､" Nothing)
-               ,("-", KanaEntry "ー" "ー" "-" Nothing)
-               ,(".", KanaEntry "。" "。" "｡" Nothing)
-               ,("[", KanaEntry "「" "「" "｢" Nothing)
-               ,("]", KanaEntry "」" "」" "｣" Nothing)
-               ,("a", KanaEntry "あ" "ア" "ｱ" Nothing)
-               ,("ba", KanaEntry "ば" "バ" "ﾊﾞ" Nothing)
-               ,("bb", KanaEntry "っ" "ッ" "ｯ" $ Just 'b')
-               ,("be", KanaEntry "べ" "ベ" "ﾍﾞ" Nothing)
-               ,("bi", KanaEntry "び" "ビ" "ﾋﾞ" Nothing)
-               ,("bo", KanaEntry "ぼ" "ボ" "ﾎﾞ" Nothing)
-               ,("bu", KanaEntry "ぶ" "ブ" "ﾌﾞ" Nothing)
-               ,("bya", KanaEntry "びゃ" "ビャ" "ﾋﾞｬ" Nothing)
-               ,("bye", KanaEntry "びぇ" "ビェ" "ﾋﾞｪ" Nothing)
-               ,("byi", KanaEntry "びぃ" "ビィ" "ﾋﾞｨ" Nothing)
-               ,("byo", KanaEntry "びょ" "ビョ" "ﾋﾞｮ" Nothing)
-               ,("byu", KanaEntry "びゅ" "ビュ" "ﾋﾞｭ" Nothing)
-               ,("cc", KanaEntry "っ" "ッ" "ｯ" $ Just 'c')
-               ,("cha", KanaEntry "ちゃ" "チャ" "ﾁｬ" Nothing)
-               ,("che", KanaEntry "ちぇ" "チェ" "ﾁｪ" Nothing)
-               ,("chi", KanaEntry "ち" "チ" "ﾁ" Nothing)
-               ,("cho", KanaEntry "ちょ" "チョ" "ﾁｮ" Nothing)
-               ,("chu", KanaEntry "ちゅ" "チュ" "ﾁｭ" Nothing)
-               ,("cya", KanaEntry "ちゃ" "チャ" "ﾁｬ" Nothing)
-               ,("cye", KanaEntry "ちぇ" "チェ" "ﾁｪ" Nothing)
-               ,("cyi", KanaEntry "ちぃ" "チィ" "ﾁｨ" Nothing)
-               ,("cyo", KanaEntry "ちょ" "チョ" "ﾁｮ" Nothing)
-               ,("cyu", KanaEntry "ちゅ" "チュ" "ﾁｭ" Nothing)
-               ,("da", KanaEntry "だ" "ダ" "ﾀﾞ" Nothing)
-               ,("dd", KanaEntry "っ" "ッ" "ｯ" $ Just 'd')
-               ,("de", KanaEntry "で" "デ" "ﾃﾞ" Nothing)
-               ,("dha", KanaEntry "でゃ" "デャ" "ﾃﾞｬ" Nothing)
-               ,("dhe", KanaEntry "でぇ" "デェ" "ﾃﾞｪ" Nothing)
-               ,("dhi", KanaEntry "でぃ" "ディ" "ﾃﾞｨ" Nothing)
-               ,("dho", KanaEntry "でょ" "デョ" "ﾃﾞｮ" Nothing)
-               ,("dhu", KanaEntry "でゅ" "デュ" "ﾃﾞｭ" Nothing)
-               ,("di", KanaEntry "ぢ" "ヂ" "ﾁﾞ" Nothing)
-               ,("do", KanaEntry "ど" "ド" "ﾄﾞ" Nothing)
-               ,("du", KanaEntry "づ" "ヅ" "ﾂﾞ" Nothing)
-               ,("dya", KanaEntry "ぢゃ" "ヂャ" "ﾁﾞｬ" Nothing)
-               ,("dye", KanaEntry "ぢぇ" "ヂェ" "ﾁﾞｪ" Nothing)
-               ,("dyi", KanaEntry "ぢぃ" "ヂィ" "ﾁﾞｨ" Nothing)
-               ,("dyo", KanaEntry "ぢょ" "ヂョ" "ﾁﾞｮ" Nothing)
-               ,("dyu", KanaEntry "ぢゅ" "ヂュ" "ﾁﾞｭ" Nothing)
-               ,("e", KanaEntry "え" "エ" "ｴ" Nothing)
-               ,("fa", KanaEntry "ふぁ" "ファ" "ﾌｧ" Nothing)
-               ,("fe", KanaEntry "ふぇ" "フェ" "ﾌｪ" Nothing)
-               ,("ff", KanaEntry "っ" "ッ" "ｯ" $ Just 'f')
-               ,("fi", KanaEntry "ふぃ" "フィ" "ﾌｨ" Nothing)
-               ,("fo", KanaEntry "ふぉ" "フォ" "ﾌｫ" Nothing)
-               ,("fu", KanaEntry "ふ" "フ" "ﾌ" Nothing)
-               ,("fya", KanaEntry "ふゃ" "フャ" "ﾌｬ" Nothing)
-               ,("fye", KanaEntry "ふぇ" "フェ" "ﾌｪ" Nothing)
-               ,("fyi", KanaEntry "ふぃ" "フィ" "ﾌｨ" Nothing)
-               ,("fyo", KanaEntry "ふょ" "フョ" "ﾌｮ" Nothing)
-               ,("fyu", KanaEntry "ふゅ" "フュ" "ﾌｭ" Nothing)
-               ,("ga", KanaEntry "が" "ガ" "ｶﾞ" Nothing)
-               ,("ge", KanaEntry "げ" "ゲ" "ｹﾞ" Nothing)
-               ,("gg", KanaEntry "っ" "ッ" "ｯ" $ Just 'g')
-               ,("gi", KanaEntry "ぎ" "ギ" "ｷﾞ" Nothing)
-               ,("go", KanaEntry "ご" "ゴ" "ｺﾞ" Nothing)
-               ,("gu", KanaEntry "ぐ" "グ" "ｸﾞ" Nothing)
-               ,("gya", KanaEntry "ぎゃ" "ギャ" "ｷﾞｬ" Nothing)
-               ,("gye", KanaEntry "ぎぇ" "ギェ" "ｷﾞｪ" Nothing)
-               ,("gyi", KanaEntry "ぎぃ" "ギィ" "ｷﾞｨ" Nothing)
-               ,("gyo", KanaEntry "ぎょ" "ギョ" "ｷﾞｮ" Nothing)
-               ,("gyu", KanaEntry "ぎゅ" "ギュ" "ｷﾞｭ" Nothing)
-               ,("ha", KanaEntry "は" "ハ" "ﾊ" Nothing)
-               ,("he", KanaEntry "へ" "ヘ" "ﾍ" Nothing)
-               ,("hh", KanaEntry "っ" "ッ" "ｯ" $ Just 'h')
-               ,("hi", KanaEntry "ひ" "ヒ" "ﾋ" Nothing)
-               ,("ho", KanaEntry "ほ" "ホ" "ﾎ" Nothing)
-               ,("hu", KanaEntry "ふ" "フ" "ﾌ" Nothing)
-               ,("hya", KanaEntry "ひゃ" "ヒャ" "ﾋｬ" Nothing)
-               ,("hye", KanaEntry "ひぇ" "ヒェ" "ﾋｪ" Nothing)
-               ,("hyi", KanaEntry "ひぃ" "ヒィ" "ﾋｨ" Nothing)
-               ,("hyo", KanaEntry "ひょ" "ヒョ" "ﾋｮ" Nothing)
-               ,("hyu", KanaEntry "ひゅ" "ヒュ" "ﾋｭ" Nothing)
-               ,("i", KanaEntry "い" "イ" "ｲ" Nothing)
-               ,("ja", KanaEntry "じゃ" "ジャ" "ｼﾞｬ" Nothing)
-               ,("je", KanaEntry "じぇ" "ジェ" "ｼﾞｪ" Nothing)
-               ,("ji", KanaEntry "じ" "ジ" "ｼﾞ" Nothing)
-               ,("jj", KanaEntry "っ" "ッ" "ｯ" $ Just 'j')
-               ,("jo", KanaEntry "じょ" "ジョ" "ｼﾞｮ" Nothing)
-               ,("ju", KanaEntry "じゅ" "ジュ" "ｼﾞｭ" Nothing)
-               ,("jya", KanaEntry "じゃ" "ジャ" "ｼﾞｬ" Nothing)
-               ,("jye", KanaEntry "じぇ" "ジェ" "ｼﾞｪ" Nothing)
-               ,("jyi", KanaEntry "じぃ" "ジィ" "ｼﾞｨ" Nothing)
-               ,("jyo", KanaEntry "じょ" "ジョ" "ｼﾞｮ" Nothing)
-               ,("jyu", KanaEntry "じゅ" "ジュ" "ｼﾞｭ" Nothing)
-               ,("ka", KanaEntry "か" "カ" "ｶ" Nothing)
-               ,("ke", KanaEntry "け" "ケ" "ｹ" Nothing)
-               ,("ki", KanaEntry "き" "キ" "ｷ" Nothing)
-               ,("kk", KanaEntry "っ" "ッ" "ｯ" $ Just 'k')
-               ,("ko", KanaEntry "こ" "コ" "ｺ" Nothing)
-               ,("ku", KanaEntry "く" "ク" "ｸ" Nothing)
-               ,("kya", KanaEntry "きゃ" "キャ" "ｷｬ" Nothing)
-               ,("kye", KanaEntry "きぇ" "キェ" "ｷｪ" Nothing)
-               ,("kyi", KanaEntry "きぃ" "キィ" "ｷｨ" Nothing)
-               ,("kyo", KanaEntry "きょ" "キョ" "ｷｮ" Nothing)
-               ,("kyu", KanaEntry "きゅ" "キュ" "ｷｭ" Nothing)
-               ,("ma", KanaEntry "ま" "マ" "ﾏ" Nothing)
-               ,("me", KanaEntry "め" "メ" "ﾒ" Nothing)
-               ,("mi", KanaEntry "み" "ミ" "ﾐ" Nothing)
-               ,("mm", KanaEntry "っ" "ッ" "ｯ" $ Just 'm')
-               ,("mo", KanaEntry "も" "モ" "ﾓ" Nothing)
-               ,("mu", KanaEntry "む" "ム" "ﾑ" Nothing)
-               ,("mya", KanaEntry "みゃ" "ミャ" "ﾐｬ" Nothing)
-               ,("mye", KanaEntry "みぇ" "ミェ" "ﾐｪ" Nothing)
-               ,("myi", KanaEntry "みぃ" "ミィ" "ﾐｨ" Nothing)
-               ,("myo", KanaEntry "みょ" "ミョ" "ﾐｮ" Nothing)
-               ,("myu", KanaEntry "みゅ" "ミュ" "ﾐｭ" Nothing)
-               ,("n", KanaEntry "ん" "ン" "ﾝ" Nothing)
-               ,("n'", KanaEntry "ん" "ン" "ﾝ" Nothing)
-               ,("na", KanaEntry "な" "ナ" "ﾅ" Nothing)
-               ,("ne", KanaEntry "ね" "ネ" "ﾈ" Nothing)
-               ,("ni", KanaEntry "に" "ニ" "ﾆ" Nothing)
-               ,("nn", KanaEntry "ん" "ン" "ﾝ" Nothing)
-               ,("no", KanaEntry "の" "ノ" "ﾉ" Nothing)
-               ,("nu", KanaEntry "ぬ" "ヌ" "ﾇ" Nothing)
-               ,("nya", KanaEntry "にゃ" "ニャ" "ﾆｬ" Nothing)
-               ,("nye", KanaEntry "にぇ" "ニェ" "ﾆｪ" Nothing)
-               ,("nyi", KanaEntry "にぃ" "ニィ" "ﾆｨ" Nothing)
-               ,("nyo", KanaEntry "にょ" "ニョ" "ﾆｮ" Nothing)
-               ,("nyu", KanaEntry "にゅ" "ニュ" "ﾆｭ" Nothing)
-               ,("o", KanaEntry "お" "オ" "ｵ" Nothing)
-               ,("pa", KanaEntry "ぱ" "パ" "ﾊﾟ" Nothing)
-               ,("pe", KanaEntry "ぺ" "ペ" "ﾍﾟ" Nothing)
-               ,("pi", KanaEntry "ぴ" "ピ" "ﾋﾟ" Nothing)
-               ,("po", KanaEntry "ぽ" "ポ" "ﾎﾟ" Nothing)
-               ,("pp", KanaEntry "っ" "ッ" "ｯ" $ Just 'p')
-               ,("pu", KanaEntry "ぷ" "プ" "ﾌﾟ" Nothing)
-               ,("pya", KanaEntry "ぴゃ" "ピャ" "ﾋﾟｬ" Nothing)
-               ,("pye", KanaEntry "ぴぇ" "ピェ" "ﾋﾟｪ" Nothing)
-               ,("pyi", KanaEntry "ぴぃ" "ピィ" "ﾋﾟｨ" Nothing)
-               ,("pyo", KanaEntry "ぴょ" "ピョ" "ﾋﾟｮ" Nothing)
-               ,("pyu", KanaEntry "ぴゅ" "ピュ" "ﾋﾟｭ" Nothing)
-               ,("ra", KanaEntry "ら" "ラ" "ﾗ" Nothing)
-               ,("re", KanaEntry "れ" "レ" "ﾚ" Nothing)
-               ,("ri", KanaEntry "り" "リ" "ﾘ" Nothing)
-               ,("ro", KanaEntry "ろ" "ロ" "ﾛ" Nothing)
-               ,("rr", KanaEntry "っ" "ッ" "ｯ" $ Just 'r')
-               ,("ru", KanaEntry "る" "ル" "ﾙ" Nothing)
-               ,("rya", KanaEntry "りゃ" "リャ" "ﾘｬ" Nothing)
-               ,("rye", KanaEntry "りぇ" "リェ" "ﾘｪ" Nothing)
-               ,("ryi", KanaEntry "りぃ" "リィ" "ﾘｨ" Nothing)
-               ,("ryo", KanaEntry "りょ" "リョ" "ﾘｮ" Nothing)
-               ,("ryu", KanaEntry "りゅ" "リュ" "ﾘｭ" Nothing)
-               ,("sa", KanaEntry "さ" "サ" "ｻ" Nothing)
-               ,("se", KanaEntry "せ" "セ" "ｾ" Nothing)
-               ,("sha", KanaEntry "しゃ" "シャ" "ｼｬ" Nothing)
-               ,("she", KanaEntry "しぇ" "シェ" "ｼｪ" Nothing)
-               ,("shi", KanaEntry "し" "シ" "ｼ" Nothing)
-               ,("sho", KanaEntry "しょ" "ショ" "ｼｮ" Nothing)
-               ,("shu", KanaEntry "しゅ" "シュ" "ｼｭ" Nothing)
-               ,("si", KanaEntry "し" "シ" "ｼ" Nothing)
-               ,("so", KanaEntry "そ" "ソ" "ｿ" Nothing)
-               ,("ss", KanaEntry "っ" "ッ" "ｯ" $ Just 's')
-               ,("su", KanaEntry "す" "ス" "ｽ" Nothing)
-               ,("sya", KanaEntry "しゃ" "シャ" "ｼｬ" Nothing)
-               ,("sye", KanaEntry "しぇ" "シェ" "ｼｪ" Nothing)
-               ,("syi", KanaEntry "しぃ" "シィ" "ｼｨ" Nothing)
-               ,("syo", KanaEntry "しょ" "ショ" "ｼｮ" Nothing)
-               ,("syu", KanaEntry "しゅ" "シュ" "ｼｭ" Nothing)
-               ,("ta", KanaEntry "た" "タ" "ﾀ" Nothing)
-               ,("te", KanaEntry "て" "テ" "ﾃ" Nothing)
-               ,("tha", KanaEntry "てぁ" "テァ" "ﾃｧ" Nothing)
-               ,("the", KanaEntry "てぇ" "テェ" "ﾃｪ" Nothing)
-               ,("thi", KanaEntry "てぃ" "ティ" "ﾃｨ" Nothing)
-               ,("tho", KanaEntry "てょ" "テョ" "ﾃｮ" Nothing)
-               ,("thu", KanaEntry "てゅ" "テュ" "ﾃｭ" Nothing)
-               ,("ti", KanaEntry "ち" "チ" "ﾁ" Nothing)
-               ,("to", KanaEntry "と" "ト" "ﾄ" Nothing)
-               ,("tsu", KanaEntry "つ" "ツ" "ﾂ" Nothing)
-               ,("tt", KanaEntry "っ" "ッ" "ｯ" $ Just 't')
-               ,("tu", KanaEntry "つ" "ツ" "ﾂ" Nothing)
-               ,("tya", KanaEntry "ちゃ" "チャ" "ﾁｬ" Nothing)
-               ,("tye", KanaEntry "ちぇ" "チェ" "ﾁｪ" Nothing)
-               ,("tyi", KanaEntry "ちぃ" "チィ" "ﾁｨ" Nothing)
-               ,("tyo", KanaEntry "ちょ" "チョ" "ﾁｮ" Nothing)
-               ,("tyu", KanaEntry "ちゅ" "チュ" "ﾁｭ" Nothing)
-               ,("u", KanaEntry "う" "ウ" "ｳ" Nothing)
-               ,("va", KanaEntry "う゛ぁ" "ヴァ" "ｳﾞｧ" Nothing)
-               ,("ve", KanaEntry "う゛ぇ" "ヴェ" "ｳﾞｪ" Nothing)
-               ,("vi", KanaEntry "う゛ぃ" "ヴィ" "ｳﾞｨ" Nothing)
-               ,("vo", KanaEntry "う゛ぉ" "ヴォ" "ｳﾞｫ" Nothing)
-               ,("vu", KanaEntry "う゛" "ヴ" "ｳﾞ" Nothing)
-               ,("vv", KanaEntry "っ" "ッ" "ｯ" $ Just 'v')
-               ,("wa", KanaEntry "わ" "ワ" "ﾜ" Nothing)
-               ,("we", KanaEntry "うぇ" "ウェ" "ｳｪ" Nothing)
-               ,("wi", KanaEntry "うぃ" "ウィ" "ｳｨ" Nothing)
-               ,("wo", KanaEntry "を" "ヲ" "ｦ" Nothing)
-               ,("wu", KanaEntry "う" "ウ" "ｳ" Nothing)
-               ,("ww", KanaEntry "っ" "ッ" "ｯ" $ Just 'w')
-               ,("xa", KanaEntry "ぁ" "ァ" "ｧ" Nothing)
-               ,("xe", KanaEntry "ぇ" "ェ" "ｪ" Nothing)
-               ,("xi", KanaEntry "ぃ" "ィ" "ｨ" Nothing)
-               ,("xka", KanaEntry "ヵ" "ヵ" "ｶ" Nothing)
-               ,("xke", KanaEntry "ヶ" "ヶ" "ｹ" Nothing)
-               ,("xo", KanaEntry "ぉ" "ォ" "ｫ" Nothing)
-               ,("xtsu", KanaEntry "っ" "ッ" "ｯ" Nothing)
-               ,("xtu", KanaEntry "っ" "ッ" "ｯ" Nothing)
-               ,("xu", KanaEntry "ぅ" "ゥ" "ｩ" Nothing)
-               ,("xwa", KanaEntry "ゎ" "ヮ" "ﾜ" Nothing)
-               ,("xwe", KanaEntry "ゑ" "ヱ" "ｴ" Nothing)
-               ,("xwi", KanaEntry "ゐ" "ヰ" "ｲ" Nothing)
-               ,("xx", KanaEntry "っ" "ッ" "ｯ" $ Just 'x')
-               ,("xya", KanaEntry "ゃ" "ャ" "ｬ" Nothing)
-               ,("xyo", KanaEntry "ょ" "ョ" "ｮ" Nothing)
-               ,("xyu", KanaEntry "ゅ" "ュ" "ｭ" Nothing)
-               ,("ya", KanaEntry "や" "ヤ" "ﾔ" Nothing)
-               ,("ye", KanaEntry "いぇ" "イェ" "ｲｪ" Nothing)
-               ,("yi", KanaEntry "い" "イ" "ｲ" Nothing)
-               ,("yo", KanaEntry "よ" "ヨ" "ﾖ" Nothing)
-               ,("yu", KanaEntry "ゆ" "ユ" "ﾕ" Nothing)
-               ,("yy", KanaEntry "っ" "ッ" "ｯ" $ Just 'y')
-               ,("z ", KanaEntry "　" "　" "　" Nothing)
-               ,("z,", KanaEntry "‥" "‥" "‥" Nothing)
-               ,("z-", KanaEntry "〜" "〜" "〜" Nothing)
-               ,("z.", KanaEntry "…" "…" "…" Nothing)
-               ,("z/", KanaEntry "・" "・" "･" Nothing)
-               ,("z:", KanaEntry "：" "：" ":" Nothing)
-               ,("z[", KanaEntry "『" "『" "『" Nothing)
-               ,("z]", KanaEntry "』" "』" "』" Nothing)
-               ,("za", KanaEntry "ざ" "ザ" "ｻﾞ" Nothing)
-               ,("ze", KanaEntry "ぜ" "ゼ" "ｾﾞ" Nothing)
-               ,("zh", KanaEntry "←" "←" "←" Nothing)
-               ,("zi", KanaEntry "じ" "ジ" "ｼﾞ" Nothing)
-               ,("zj", KanaEntry "↓" "↓" "↓" Nothing)
-               ,("zk", KanaEntry "↑" "↑" "↑" Nothing)
-               ,("zl", KanaEntry "→" "→" "→" Nothing)
-               ,("zo", KanaEntry "ぞ" "ゾ" "ｿﾞ" Nothing)
-               ,("zu", KanaEntry "ず" "ズ" "ｽﾞ" Nothing)
-               ,("zw", KanaEntry "ｗ" "ｗ" "ｗ" Nothing)
-               ,("zya", KanaEntry "じゃ" "ジャ" "ｼﾞｬ" Nothing)
-               ,("zye", KanaEntry "じぇ" "ジェ" "ｼﾞｪ" Nothing)
-               ,("zyi", KanaEntry "じぃ" "ジィ" "ｼﾞｨ" Nothing)
-               ,("zyo", KanaEntry "じょ" "ジョ" "ｼﾞｮ" Nothing)
-               ,("zyu", KanaEntry "じゅ" "ジュ" "ｼﾞｭ" Nothing)
-               ,("zz", KanaEntry "っ" "ッ" "ｯ" $ Just 'z')
-               ]
+defKanaTable = parseKanaTable $(litE . stringL =<< runIO (readFile "data/kana-rule.conf"))
 
 parseKanaTable :: T.Text -> KanaTable
 parseKanaTable =
@@ -384,22 +415,34 @@ parseKanaTable =
   where
     build [a, b, c, d] = (T.encodeUtf8 $ T.replace "&comma;" "," a, KanaEntry b c d Nothing)
     build [a, b, c, d, e] = (T.encodeUtf8 $ T.replace "&comma;" "," a, KanaEntry b c d $ Just $ T.head e)
+    build _ = error "impossible!"
 
+formatPair :: (BS.ByteString, KanaEntry) -> T.Text
+formatPair (mid, ent) = T.intercalate "," [ T.replace "," "&comma;" $ T.decodeUtf8 mid, formatEntry ent ]
+
+formatEntry :: KanaEntry -> T.Text
+formatEntry (KanaEntry a b c md) =
+  T.intercalate "," $ map (T.replace "," "&comma;") $
+  a : b : c :maybe [] (return . T.singleton) md
+
+formatKanaTable :: KanaTable -> T.Text
+formatKanaTable = T.unlines . map formatPair . Trie.toList . view kanaDic
+
+{-
 prettyKanaTable :: KanaTable -> T.Text
 prettyKanaTable =
   T.unlines . (++ ["]"]) . (_tail.each %~ (T.cons ',')) .
   (_head  %~ (T.cons '[')) . map prettyEntry . toList . view kanaDic
 
-show' :: Show a => a -> T.Text
-show' = T.pack . show
 
 prettyEntry :: Show a => (a, KanaEntry) -> T.Text
 prettyEntry (mid, KanaEntry a b c d) =
   T.concat ["(", show' mid, ", KanaEntry ", T.unwords $ map prettyText [a, b, c], " $ ", show' d, ")"]
+-}
 
 prettyText :: T.Text -> T.Text
 prettyText str = "\"" <> str <> "\""
 
-prettyState :: ConvState -> String
+prettyState :: KanaResult -> String
 prettyState (Converted a) = T.unpack $ "Converted " <> prettyText a
 prettyState w             = show w

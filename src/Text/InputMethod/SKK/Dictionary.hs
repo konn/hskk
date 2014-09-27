@@ -3,6 +3,7 @@
 module Text.InputMethod.SKK.Dictionary where
 import           Control.Applicative  ((*>), (<$), (<$>), (<*), (<*>), (<|>))
 import           Control.Lens
+import           Control.Lens.Extras  (is)
 import           Control.Monad        (guard)
 import           Data.Attoparsec.Text
 import           Data.Char            (isAlpha, isAscii, isLower, isSpace)
@@ -10,10 +11,15 @@ import           Data.Data            (Data, Typeable)
 import           Data.Hashable
 import qualified Data.HashMap.Strict  as HM
 import           Data.List            (delete, sortBy)
+import           Data.List            (partition)
+import           Data.List            (find)
+import           Data.List            (nub)
+import           Data.Maybe           (fromMaybe)
 import           Data.Monoid          ((<>))
 import           Data.Ord             (comparing)
 import qualified Data.Text            as T
 import           GHC.Generics         (Generic)
+import           Language.Haskell.TH
 import           Prelude              hiding (lookup, takeWhile)
 
 data Input = Input { _gokan     :: T.Text
@@ -37,6 +43,9 @@ data Dictionary = Dict { _okuriAriDic  :: AriDic
                        }
                    deriving (Show, Eq, Data, Typeable)
 
+emptyDic :: Dictionary
+emptyDic = Dict HM.empty HM.empty
+
 instance Hashable Candidate
 
 makeLenses ''Input
@@ -44,6 +53,7 @@ makeLenses ''Input
 makeLenses ''Dictionary
 
 makeLenses ''Candidate
+makePrisms ''Candidate
 
 data Okuri = Ari | Nasi
            deriving (Read, Show, Eq, Ord)
@@ -51,6 +61,19 @@ data Okuri = Ari | Nasi
 lookup :: Input -> Dictionary -> Maybe [Candidate]
 lookup (Input g Nothing) (Dict _ noDic) = HM.lookup g noDic
 lookup (Input g (Just o)) (Dict oDic _) = HM.lookup (g, o) oDic
+
+lookup' :: Input -> T.Text -> Dictionary -> Maybe [T.Text]
+lookup' i@(Input _ Nothing) _ d
+  = map (view tango) . filter (is _Candidate) <$> lookup i d
+lookup' i@(Input _ Just{}) t d =
+  case lookup i d of
+    Nothing -> Nothing
+    Just cands ->
+      let (subs, ords) = partition (is _OkuriSub) cands
+          mtargs = filter (is _Candidate) . view subCands <$>
+                   find ((== t) . view okuri) subs
+          targs = fromMaybe [] mtargs
+      in Just $ nub $ map (view tango) $ targs ++ ords
 
 insert :: Input -> Candidate -> Dictionary -> Dictionary
 insert (Input k Nothing) v d =
@@ -177,3 +200,6 @@ dictionary = do
   skipMany line
   endOfInput
   return dic
+
+sDictionary :: Dictionary
+Right sDictionary = parseOnly dictionary $(litE . stringL . tail =<< runIO (readFile "data/SKK-JISYO.S"))
