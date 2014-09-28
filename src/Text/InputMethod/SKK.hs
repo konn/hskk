@@ -29,15 +29,18 @@ import           Control.Lens          (to, traverse, use, uses, view, (%=))
 import           Control.Lens          ((&), (.=), (<>=), (?=), (^.), (^?), _1)
 import           Control.Lens          (_2, _Just, _head)
 import           Control.Lens          ((<%=), (<<>=))
+import           Control.Lens          ((<?=))
 import           Control.Lens.Extras   (is)
-import           Control.Monad         (liftM)
+import           Control.Monad         (unless)
 import           Control.Zipper
 import           Data.Attoparsec.Text  (parseOnly)
 import qualified Data.ByteString.Char8 as BS
 import           Data.Char             (isAlpha, isAscii, isUpper, toLower)
 import           Data.Data             (Data, Typeable)
+import qualified Data.HashMap.Strict   as HM
 import           Data.List             (elemIndex, partition, unfoldr)
 import           Data.Maybe            (fromJust, fromMaybe, isJust)
+import           Data.Maybe            (mapMaybe)
 import           Data.Monoid           (Monoid (..), (<>))
 import qualified Data.Text             as T
 import qualified Data.Text.Encoding    as T
@@ -176,17 +179,18 @@ data SKKResult = Idle [KanaResult]
                | ConvNotFound T.Text (Maybe (Char, T.Text))
                deriving (Read, Show, Eq, Ord, Data, Typeable)
 
-data SKKState = SKKState { _kanaState  :: Maybe KanaState
-                         , _okuriState :: Maybe (Char, T.Text)
-                         , _convBuf    :: Maybe T.Text
-                         , _selection  :: Maybe (Top :>> [[T.Text]] :>> [T.Text])
-                         , _slashed    :: Bool
+data SKKState = SKKState { _kanaState      :: Maybe KanaState
+                         , _okuriState     :: Maybe (Char, T.Text)
+                         , _convBuf        :: Maybe T.Text
+                         , _selection      :: Maybe (Top :>> [[T.Text]] :>> [T.Text])
+                         , _slashed        :: Bool
+                         , _compCandidates :: Maybe (Top :>> [T.Text] :>> T.Text)
                          } deriving (Typeable)
 makeLenses ''SKKState
 makePrisms ''SKKResult
 
 newSKKState :: SKKState
-newSKKState = SKKState Nothing Nothing Nothing Nothing False
+newSKKState = SKKState Nothing Nothing Nothing Nothing False Nothing
 
 okuriBuf :: Applicative f => (T.Text -> f T.Text) -> SKKState -> f SKKState
 okuriBuf = okuriState . _Just . _2
@@ -216,6 +220,7 @@ data View = NextPage (Top :>> [[T.Text]] :>> [T.Text])
           | StartSlash
           | SlashInput
           | Noop
+          | DoCompletion
           | ToggleKana
 
 viewS :: Char -> SKKState -> View
@@ -229,7 +234,7 @@ viewS c s
     else if c == '\n'           -- Take first candidate
     then TakeFirst curPage
     else if isUpper c && length (curPage ^. focus) == 1 && not (s ^. kanaing)
-    then TakeFirst curPage `AndThen` ConvertInput
+    then TakeFirst curPage `AndThen` StartConvert `AndThen` ConvertInput
     else if length (curPage ^. focus) == 1 && c == '/'
     then TakeFirst curPage `AndThen` StartSlash
     else if length (curPage ^. focus) == 1
@@ -249,6 +254,7 @@ viewS c s
     (s ^. convBuf)  /= Just "" &&
     not (s ^. selecting) &&  not (s ^. slashed)  = StartOkuri `AndThen` OkuriInput
   | s ^. converting && s ^. slashed = SlashInput
+  | s ^. converting && not (s ^. hasOkuri) && c == '\t' = DoCompletion
   | s ^. converting && not (s ^. hasOkuri) = ConvertInput
   | s ^. converting && s ^. hasOkuri = OkuriInput
   | c == '\DEL' && not (s ^. kanaing) = Noop
@@ -258,6 +264,9 @@ viewS c s
 Just (c, str) <||> Just (_, str') = Just (c, str <> str')
 Nothing <||> a = a
 a <||> Nothing = a
+
+nextCompletion :: (a :>> b) -> (a :>> b)
+nextCompletion s = fromMaybe  (s & leftmost) (s & rightward)
 
 skkConv :: KanaTable -> ConvMode -> Dictionary
         -> Pager -> CandidateSelector
@@ -284,6 +293,25 @@ skkConv table kana dic pager select s0 c = runSW s0 (go (viewS c s0))
     go Complete = do
       buf <- fromMaybe "" <$> use convBuf
       complete buf
+    go DoCompletion = do
+      trail <- either fst id <$> toKana Nothing
+      kanaState .= Nothing
+      convBuf <>= Just trail
+      mcomps <- use compCandidates
+      case mcomps of
+        Nothing -> do
+          buf <- fromMaybe "" <$> use convBuf
+          unless (T.null buf) $ do
+            let cs = filter (buf `T.isPrefixOf`) $
+                     HM.keys $ dic ^. okuriNasiDic
+            unless (null cs)$ do
+              compCandidates ?= (zipper cs & fromWithin traverse)
+              convBuf ?= head cs
+              convertingWith ""
+        Just cur -> do
+          cur' <- compCandidates <?= (cur & nextCompletion)
+          convBuf ?= cur' ^. focus
+          convertingWith ""
     go StartConvert = do
       mans <- toKana Nothing
       case mans of
@@ -313,6 +341,7 @@ skkConv table kana dic pager select s0 c = runSW s0 (go (viewS c s0))
     go (AndThen p q) = go p >> go q
     go Noop = emit $ Idle [NoHit]
     go DeleteConvert = do
+      compCandidates .= Nothing
       buf <- fromMaybe "" <$> use convBuf
       isKana <- uses kanaState (maybe False isConverting)
       if isKana
@@ -368,6 +397,7 @@ skkConv table kana dic pager select s0 c = runSW s0 (go (viewS c s0))
         Nothing -> showPage $ curPage ^. focus
         Just t  -> complete t
     go ConvertInput = do
+      compCandidates .= Nothing
       rslt <- toKana $ Just (toLower c)
       case rslt of
         Right ans -> do

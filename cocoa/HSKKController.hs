@@ -196,6 +196,11 @@ objc_implementation [ Typed 'pushKey, Typed 'deleteKey, Typed 'newSession ]
         [[HSKKKeyResult alloc] initWithKeyResultHsPtr: pushKey(self.session, sender, @"\n")];
     self.session = tuple.session;
     return tuple.changed;
+  } else if (aSelector == @selector(insertTab:)) {
+    typename HSKKKeyResult *tuple =
+        [[HSKKKeyResult alloc] initWithKeyResultHsPtr: pushKey(self.session, sender, @"\t")];
+    self.session = tuple.session;
+    return tuple.changed;
   }
   return NO;
 }
