@@ -106,7 +106,6 @@ objc_typecheck
 
 pushKey :: Session -> NSObject -> String -> IO KeyResult
 pushKey session client input = do
-  nsLog $ "keypushed: " ++ show input
   (upd, dict') <- updaterFor client $ _dict session
   accepted <- and <$> mapM upd input
   return $ KeyResult session { _dict = dict' } accepted
@@ -120,7 +119,6 @@ updaterFor sender dic
     step <- start $ do
       input <- externalE eev
       ev <- defSKKConvE input
-      _ <- generatorE $ liftIO . nsLog . ("input: " ++) . show <$> ev
       _ <- generatorE $ mapM edited <$> ev
       return $ all (noneOf (_Idle . traverse) (is _NoHit)) <$> eventToBehavior (flattenE ev)
     let push inp = triggerExternalEvent eev inp >> step
