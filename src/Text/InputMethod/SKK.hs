@@ -26,33 +26,27 @@ import           Control.Arrow         (second, (***), (>>>))
 import           Control.Effect        hiding (select, swap)
 import           Control.Lens          (ix, makeLenses, makePrisms, makeWrapped)
 import           Control.Lens          (to, traverse, use, uses, view, (%=))
-import           Control.Lens          ((&), (.=), (<>=), (?=), (^.), (^?), _1)
-import           Control.Lens          (_2, _Just, _head)
-import           Control.Lens          ((<%=), (<<>=))
-import           Control.Lens          ((<?=))
+import           Control.Lens          ((&), (.=), (<%=), (<<>=), (<>=), (<?=))
+import           Control.Lens          ((?=), (^.), (^?), _2, _Just, _head)
 import           Control.Lens.Extras   (is)
 import           Control.Monad         (unless)
 import           Control.Zipper
 import           Data.Attoparsec.Text  (parseOnly)
 import qualified Data.ByteString.Char8 as BS
-import           Data.Char             (isAlpha, isAscii, isUpper, toLower)
+import           Data.Char             (isAlpha, isAscii, isAsciiUpper, toLower)
 import           Data.Data             (Data, Typeable)
 import qualified Data.HashMap.Strict   as HM
 import           Data.List             (elemIndex, partition, unfoldr)
 import           Data.Maybe            (fromJust, fromMaybe, isJust)
-import           Data.Maybe            (mapMaybe)
 import           Data.Monoid           (Monoid (..), (<>))
 import qualified Data.Text             as T
 import qualified Data.Text.Encoding    as T
 import           Data.Trie             hiding (lookup, null)
 import qualified Data.Trie             as Trie
 import           Data.Tuple            (swap)
-import           Debug.Trace           (trace, traceShow)
-import           FRP.Ordrea            (Event, SignalGen)
-import           FRP.Ordrea            (newExternalEvent)
-import           FRP.Ordrea            (triggerExternalEvent)
-import           FRP.Ordrea            (eventToBehavior, externalE)
-import           FRP.Ordrea            (mapAccumE, start)
+import           FRP.Ordrea            (Event, SignalGen, eventToBehavior)
+import           FRP.Ordrea            (externalE, mapAccumE, newExternalEvent)
+import           FRP.Ordrea            (start, triggerExternalEvent)
 import           Language.Haskell.TH   (litE, runIO, stringL)
 import           Prelude               hiding (lookup)
 
@@ -195,9 +189,6 @@ newSKKState = SKKState Nothing Nothing Nothing Nothing False Nothing
 okuriBuf :: Applicative f => (T.Text -> f T.Text) -> SKKState -> f SKKState
 okuriBuf = okuriState . _Just . _2
 
-okuriChar :: Applicative f => (Char -> f Char) -> SKKState -> f SKKState
-okuriChar = okuriState . _Just . _1
-
 hasOkuri = okuriState . to isJust
 converting = convBuf . to isJust
 selecting = selection . to isJust
@@ -233,7 +224,7 @@ viewS c s
     then PrevPage curPage
     else if c == '\n'           -- Take first candidate
     then TakeFirst curPage
-    else if isUpper c && length (curPage ^. focus) == 1 && not (s ^. kanaing)
+    else if isAsciiUpper c && length (curPage ^. focus) == 1 && not (s ^. kanaing)
     then TakeFirst curPage `AndThen` StartConvert `AndThen` ConvertInput
     else if length (curPage ^. focus) == 1 && c == '/'
     then TakeFirst curPage `AndThen` StartSlash
@@ -246,11 +237,11 @@ viewS c s
       if s ^. hasOkuri
       then DeleteOkuri
       else DeleteConvert
-  | isUpper c && not (s ^. converting) = ConvertInput -- Start new conversion phase
+  | isAsciiUpper c && not (s ^. converting) = ConvertInput -- Start new conversion phase
   | c == ' ' && s ^. converting        = Convert (s ^. convBuf._Just) (s ^. okuriState)
                                          -- Convert inputted somethings
   | c == 'q' && s ^. converting && not (s ^. hasOkuri) = ToggleKana
-  | isUpper c && s ^. converting && not (s ^. hasOkuri) &&
+  | isAsciiUpper c && s ^. converting && not (s ^. hasOkuri) &&
     (s ^. convBuf)  /= Just "" &&
     not (s ^. selecting) &&  not (s ^. slashed)  = StartOkuri `AndThen` OkuriInput
   | s ^. converting && s ^. slashed = SlashInput
@@ -259,11 +250,6 @@ viewS c s
   | s ^. converting && s ^. hasOkuri = OkuriInput
   | c == '\DEL' && not (s ^. kanaing) = Noop
   | otherwise = NormalInput
-
-(<||>) :: Monoid t1 => Maybe (t, t1) -> Maybe (t, t1) -> Maybe (t, t1)
-Just (c, str) <||> Just (_, str') = Just (c, str <> str')
-Nothing <||> a = a
-a <||> Nothing = a
 
 nextCompletion :: (a :>> b) -> (a :>> b)
 nextCompletion s = fromMaybe  (s & leftmost) (s & rightward)
@@ -454,6 +440,7 @@ skkConv table kana dic pager select s0 c = runSW s0 (go (viewS c s0))
           (prgs, cvd) = partition (is _InProgress) rs
           finished = T.concat $ map toT cvd
           toT NoHit          = T.singleton c
+          toT Reset          = ""
           toT (InProgress t) = T.decodeUtf8 t
           toT (Converted t)  = t
       if isConverting ks'
@@ -514,26 +501,3 @@ formatEntry (KanaEntry a b c md) =
 
 formatKanaTable :: KanaTable -> T.Text
 formatKanaTable = T.unlines . map formatPair . Trie.toList . view kanaDic
-
-{-
-prettyKanaTable :: KanaTable -> T.Text
-prettyKanaTable =
-  T.unlines . (++ ["]"]) . (_tail.each %~ (T.cons ',')) .
-  (_head  %~ (T.cons '[')) . map prettyEntry . toList . view kanaDic
-
-
-prettyEntry :: Show a => (a, KanaEntry) -> T.Text
-prettyEntry (mid, KanaEntry a b c d) =
-  T.concat ["(", show' mid, ", KanaEntry ", T.unwords $ map prettyText [a, b, c], " $ ", show' d, ")"]
--}
-
-prettyText :: T.Text -> T.Text
-prettyText str = "\"" <> str <> "\""
-
-prettyState :: KanaResult -> String
-prettyState (Converted a) = T.unpack $ "Converted " <> prettyText a
-prettyState w             = show w
-
-prettyStates :: [KanaResult] -> String
-prettyStates ss = T.unpack $ "[" <> T.intercalate ", " (map (T.pack . prettyState) ss) <> "]"
-

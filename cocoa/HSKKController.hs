@@ -5,6 +5,7 @@
 {-# LANGUAGE TypeFamilies, TypeOperators                                #-}
 {-# OPTIONS_GHC -fno-warn-unused-binds -fno-warn-orphans #-}
 module HSKKController ( objc_initialise ) where
+import KeyFlags
 import Messaging
 
 import Text.InputMethod.SKK
@@ -20,6 +21,7 @@ import           Data.Maybe             (fromMaybe)
 import           Data.Monoid            ((<>))
 import qualified Data.Text              as T
 import           Data.Typeable          (Typeable)
+import           Data.Word              (Word)
 import           FRP.Ordrea
 import           Language.C.Inline.ObjC
 import           Language.C.Quote.ObjC
@@ -102,13 +104,34 @@ marshalKeyResult hsk
 
 objc_marshaller 'demarshalKeyResult 'marshalKeyResult
 
+objc_interface [cunit|
+@interface HSKKController : IMKInputController
+@property (assign) typename HsStablePtr session;
+@end
+|]
+
 objc_typecheck
 
-pushKey :: Session -> NSObject -> String -> IO KeyResult
+pushKey :: Session -> NSObject -> String -> IO Bool
 pushKey session client input = do
   (upd, dict') <- updaterFor client $ _dict session
   accepted <- and <$> mapM upd input
-  return $ KeyResult session { _dict = dict' } accepted
+  let myself = _self session
+      sess   = session { _dict = dict' }
+  $(objc ['myself :> ''HSKKController, 'sess :> ''Session] $
+          void $ [cexp| myself.session = sess |])
+  return accepted
+
+pushKey2 :: Session -> NSObject -> String -> CLong -> CULong -> IO Bool
+pushKey2 session client input key flags = do
+  let modifs = decodeModifiers flags
+  nsLog $ "input: " ++ show (input, decodeKey $ head input, decodeModifiers flags)
+  case decodeKey $ head input of
+    Just (Normal c) | all (`elem` [AlphaShift, Shift]) modifs -> pushKey session client [c]
+    Just (Special Delete) -> pushKey session client "\DEL"
+    Just (Special InsertLine) -> pushKey session client "\n"
+--     Just Undo -> pushKey session client "\b"
+    _ -> return False
 
 updaterFor :: Client -> M.Map Client (Char -> IO Bool)
            -> IO (Char -> IO Bool, M.Map Client (Char -> IO Bool))
@@ -146,7 +169,7 @@ updaterFor sender dic
       liftIO $ sender # setMarkedText (BS.unpack buf) 0 (BS.length buf)
     plainEdited NoHit = return ()
 
-deleteKey :: Session -> NSObject -> IO KeyResult
+deleteKey :: Session -> NSObject -> IO Bool
 deleteKey session client = pushKey session client "\DEL"
 
 nsLog :: String -> IO ()
@@ -155,14 +178,7 @@ nsLog msg = $(objc ['msg :> ''String] $ void [cexp| NSLog(@"%@", msg) |])
 newSession :: HSKKController -> IO Session
 newSession ctrl = return $ Session M.empty ctrl
 
-objc_interface [cunit|
-@interface HSKKController : IMKInputController
-@property (assign) typename HsStablePtr session;
-- (typename BOOL)inputText:(typename NSString *)string client:(id)sender;
-@end
-|]
-
-objc_implementation [ Typed 'pushKey, Typed 'deleteKey, Typed 'newSession ]
+objc_implementation [ Typed 'pushKey, Typed 'pushKey2, Typed 'deleteKey, Typed 'newSession ]
   [cunit|
 @implementation HSKKController
 - (id)initWithServer:(typename IMKServer *)server
@@ -176,33 +192,12 @@ objc_implementation [ Typed 'pushKey, Typed 'deleteKey, Typed 'newSession ]
   return self;
 }
 
-- (typename BOOL)inputText:(typename NSString *)string client:(id)sender
+- (typename BOOL) inputText:(typename NSString *)string
+                        key:(long)keyCode
+                  modifiers:(unsigned long)flags
+                     client:(id)sender
 {
-    typename HSKKKeyResult *tuple =
-      [[HSKKKeyResult alloc] initWithKeyResultHsPtr: pushKey(self.session, sender, string)];
-    self.session = tuple.session;
-    return tuple.changed;
-}
-
--(typename BOOL)didCommandBySelector:(typename SEL)aSelector client:(id)sender
-{
-  if (aSelector == @selector(deleteBackward:)) {
-    typename HSKKKeyResult *tuple =
-        [[HSKKKeyResult alloc] initWithKeyResultHsPtr: deleteKey(self.session, sender)];
-    self.session = tuple.session;
-    return tuple.changed;
-  } else if (aSelector == @selector(insertNewline:)) {
-    typename HSKKKeyResult *tuple =
-        [[HSKKKeyResult alloc] initWithKeyResultHsPtr: pushKey(self.session, sender, @"\n")];
-    self.session = tuple.session;
-    return tuple.changed;
-  } else if (aSelector == @selector(insertTab:)) {
-    typename HSKKKeyResult *tuple =
-        [[HSKKKeyResult alloc] initWithKeyResultHsPtr: pushKey(self.session, sender, @"\t")];
-    self.session = tuple.session;
-    return tuple.changed;
-  }
-  return NO;
+   return pushKey2(self.session, sender, string, keyCode, flags);
 }
 
 @end
