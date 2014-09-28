@@ -10,24 +10,15 @@ import Messaging
 import Text.InputMethod.SKK
 
 import           Control.Applicative    ((<$>))
-import           Control.Applicative    ((<*))
-import           Control.Lens           (isn't)
-import           Control.Lens           (makeLenses)
-import           Control.Lens           ((<>~))
-import           Control.Lens           ((&))
-import           Control.Lens           ((%~), (^.))
-import           Control.Lens           ((.~))
+import           Control.Lens           (noneOf)
+import           Control.Lens           (traverse)
 import           Control.Lens.Extras    (is)
 import           Control.Monad.IO.Class (liftIO)
 import qualified Data.ByteString.Char8  as BS
-import           Data.Foldable          (foldlM)
 import qualified Data.Map               as M
 import           Data.Maybe             (fromMaybe)
-import           Data.Monoid            (mconcat)
-import           Data.Monoid            ((<>))
 import           Data.Monoid            ((<>))
 import qualified Data.Text              as T
-import qualified Data.Text.Encoding     as T
 import           Data.Typeable          (Typeable)
 import           FRP.Ordrea
 import           Language.C.Inline.ObjC
@@ -78,11 +69,6 @@ data Session = Session { _dict :: M.Map Client (Char -> IO Bool)
 data KeyResult = KeyResult { curSession   :: Session
                            , stateChanged :: Bool
                            } deriving (Typeable)
-
-data InputState = InputState { _markedBuffer :: BS.ByteString }
-makeLenses ''InputState
-
-defInputState = InputState ""
 
 newKeyResult :: Session -> Bool -> KeyResult
 newKeyResult = KeyResult
@@ -136,15 +122,15 @@ updaterFor sender dic
       ev <- defSKKConvE input
       _ <- generatorE $ liftIO . nsLog . ("input: " ++) . show <$> ev
       _ <- generatorE $ mapM edited <$> ev
-      return $ (/= Idle [NoHit]) . head <$> eventToBehavior (flattenE ev)
+      return $ all (noneOf (_Idle . traverse) (is _NoHit)) <$> eventToBehavior (flattenE ev)
     let push inp = triggerExternalEvent eev inp >> step
     return $ (push, M.insert sender push dic)
   where
-    edited (Idle eds) = plainEdited' eds defInputState
+    edited (Idle eds) = mapM_ plainEdited eds
     edited (Page cands mokuri) = do
       let msg | [a] <- cands = "▼" <> a <> fromMaybe "" mokuri
               | otherwise    = "[候補: " <> T.intercalate " / "
-                               (zipWith (\a b -> T.singleton a <> ": " <> b) "asdfhjk"  cands) <> "]"
+                               (zipWith (\a b -> T.singleton a <> ": " <> b) "asdfjkl"  cands) <> "]"
                                 <> fromMaybe "" mokuri
       liftIO $ sender # setMarkedText (T.unpack msg) 0 (T.length msg)
     edited (ConvNotFound _ _) = liftIO $ sender # setMarkedText "" 0 0
@@ -156,28 +142,11 @@ updaterFor sender dic
     edited (Converting str) = do
       let ans = "▽" <> str
       liftIO $ sender # setMarkedText (T.unpack ans) 0 (T.length ans)
-    plainEdited' cs s0 = do
-      _ <- foldlM plainEdited s0 cs
-      return ()
-    plainEdited s (Converted text) = do
+    plainEdited (Converted text) =
       liftIO $ sender # insertText (T.unpack text)
-      return $ s & markedBuffer .~ ""
-    plainEdited s Deleted
-      | not $ BS.null (s ^. markedBuffer) = do
-        let s' = s & markedBuffer %~ BS.init
-            buf = s' ^. markedBuffer
-        liftIO $ sender # setMarkedText (BS.unpack buf) 0 (BS.length buf)
-        return s'
-    plainEdited s (InProgress c)   = do
-      let s'  = s & markedBuffer <>~ c
-          buf = s' ^. markedBuffer
-      liftIO $ do
-        nsLog $ "temp buf: " ++ BS.unpack buf
-        sender # setMarkedText (BS.unpack buf) 0 (BS.length buf)
-      return s'
-    plainEdited s NoHit =
-      return $ s & markedBuffer .~ ""
-    plainEdited s _ = return  s
+    plainEdited (InProgress buf) =
+      liftIO $ sender # setMarkedText (BS.unpack buf) 0 (BS.length buf)
+    plainEdited NoHit = return ()
 
 deleteKey :: Session -> NSObject -> IO KeyResult
 deleteKey session client = pushKey session client "\DEL"
