@@ -1,176 +1,113 @@
-module KeyFlags where
-import Control.Applicative ((<$>))
-import Data.Bits
-import Data.Char           (Char)
-import Data.Char           (isAscii)
-import Data.Char           (isControl)
-import Data.List           (elemIndex)
-import Data.Maybe          (fromJust)
-import Foreign.C.Types
+{-# LANGUAGE DeriveDataTypeable, OverloadedStrings, TemplateHaskell #-}
+{-# LANGUAGE TypeFamilies                                           #-}
+module KeyFlags
+       (Masked(..), testCode, compatible, Keyboard(..),
+        decodeKeyboard, decodeModifiers, Modifier(..),
+        decodeFunctionKey, functionKeys, isAlphabeticModifier) where
+import KeyFlags.Macros
 
-type Modifiers = CULong
-type Mask = CULong
+import           Control.Applicative ((<$>))
+import           Data.Bits
+import qualified Data.Text.IO        as T
+import           Foreign.C.Types
+import           Language.Haskell.TH (runIO)
 
-data ModifierKey = AlphaShift
-                 | Shift
-                 | Control
-                 | Alternate
-                 | Command
-                 | NumericPad
-                 | HelpM
-                 | Function
-                 | Independent
-                 deriving (Read, Show, Eq, Ord, Enum)
+do table <- runIO $ procLR . parse <$> T.readFile "data/keycodes.dat"
+   defineKeyCode "Keyboard" [t| CLong |] table
 
-maskDic :: [(ModifierKey, Modifiers)]
-maskDic = [(AlphaShift, alphaShiftMask)
-          ,(Shift, shiftMask)
-          ,(Control, controlMask)
-          ,(AlphaShift, alternateMask)
-          ,(Command, commandMask)
-          ,(NumericPad, numericPadMask)
-          ,(HelpM, helpMask)
-          ,(Function, functionMask)
-          ,(Independent, independentMask)
-          ]
+decodeModifiers :: Mask Modifier -> [Modifier]
+decodeModifiers b = [m | m <- modifiers, testCode m b]
 
-alphaShiftMask :: Modifiers
+data Modifier = AlphaShift
+              | Shift
+              | Control
+              | Alternate
+              | Command
+              | NumericPad
+              | HelpM
+              | Function
+              | Independent
+              deriving (Read, Show, Eq, Ord, Enum)
+
+instance Masked Modifier where
+  type Mask Modifier = CULong
+  toMask AlphaShift  = alphaShiftMask
+  toMask Alternate  = alternateMask
+  toMask Shift       = shiftMask
+  toMask Control = controlMask
+  toMask Command = commandMask
+  toMask NumericPad = numericPadMask
+  toMask HelpM = helpMask
+  toMask Function = functionMask
+  toMask Independent = independentMask
+
+isAlphabeticModifier :: Modifier -> Bool
+isAlphabeticModifier a = compatible Shift a || compatible AlphaShift a
+
+modifiers :: [Modifier]
+modifiers = [ AlphaShift
+            , Shift
+            , Control
+            , Alternate
+            , Command
+            , NumericPad
+            , HelpM
+            , Function
+            , Independent
+            ]
+alphaShiftMask :: Mask Modifier
 alphaShiftMask = 1 `shiftL` 16
 
-shiftMask :: Modifiers
+shiftMask :: Mask Modifier
 shiftMask = 1 `shiftL` 17
 
-controlMask :: Modifiers
+controlMask :: Mask Modifier
 controlMask = 1 `shiftL` 18
 
-alternateMask :: Modifiers
+alternateMask :: Mask Modifier
 alternateMask = 1 `shiftL` 19
 
-commandMask :: Modifiers
+commandMask :: Mask Modifier
 commandMask = 1 `shiftL` 20
 
-numericPadMask :: Modifiers
+numericPadMask :: Mask Modifier
 numericPadMask = 1 `shiftL` 21
 
-helpMask :: Modifiers
+helpMask :: Mask Modifier
 helpMask = 1 `shiftL` 22
 
-functionMask :: Modifiers
+functionMask :: Mask Modifier
 functionMask = 1 `shiftL` 23
 
-independentMask :: Modifiers
+independentMask :: Mask Modifier
 independentMask = 0xffff0000
 
-hasBit :: Mask -> Modifiers -> Bool
-hasBit a b = a .&. b == a
+functionKeys :: [Keyboard]
+functionKeys = case break (==Home) funs0 of
+  (as, bs) -> as ++ head bs : drop 2 bs
 
-decodeModifiers :: Modifiers -> [ModifierKey]
-decodeModifiers b = [k | (k, m) <- maskDic, hasBit m b]
-
-decodeFunctionKey :: Char -> Maybe FunctionKey
-decodeFunctionKey = flip lookup functionKeyDic
-
-data Key = Special FunctionKey | Normal Char
-         deriving (Read, Show, Eq, Ord)
-
-decodeKey :: Char -> Maybe Key
-decodeKey c
-  | not (isControl c) || c == '\t' = Just $ Normal c
-  | otherwise = Special <$> decodeFunctionKey c
-
-data FunctionKey = UpArrow
-                 | DownArrow
-                 | LeftArrow
-                 | RightArrow
-                 | Fn Int
-                 | Insert
-                 | Delete
-                 | Home
-                 | Begin
-                 | End
-                 | PageUp
-                 | PageDown
-                 | PrintScreen
-                 | ScrollLock
-                 | Pause
-                 | SysReq
-                 | Break
-                 | Reset
-                 | Stop
-                 | Menu
-                 | User
-                 | System
-                 | Print
-                 | ClearLine
-                 | ClearDisplay
-                 | InsertLine
-                 | DeleteLine
-                 | InsertChar
-                 | DeleteChar
-                 | Prev
-                 | Next
-                 | Select
-                 | Execute
-                 | Undo
-                 | Redo
-                 | Find
-                 | HelpF
-                 | ModeSwitch
-                 deriving (Read, Show, Eq, Ord)
-
-funs :: [FunctionKey]
-funs = [UpArrow
-       , DownArrow
-       , LeftArrow
-       , RightArrow
+funs0 :: [Keyboard]
+funs0 = [CursorUp
+       , CursorDown
+       , CursorLeft
+       , CursorRight
        ] ++ [ Fn n | n <- [1..35]] ++
-       [ Insert
+       [ PcInsert
        , Delete
        , Home
-       , Begin
+       , undefined
        , End
-       , PageUp
-       , PageDown
-       , PrintScreen
-       , ScrollLock
-       , Pause
-       , SysReq
-       , Break
-       , Reset
-       , Stop
-       , Menu
-       , User
-       , System
-       , Print
-       , ClearLine
-       , ClearDisplay
-       , InsertLine
-       , DeleteLine
-       , InsertChar
-       , DeleteChar
-       , Prev
-       , Next
-       , Select
-       , Execute
-       , Undo
-       , Redo
-       , Find
-       , HelpF
-       , ModeSwitch
+       , Pageup
+       , Pagedown
+       , PcPrintscreen
+       , PcScrolllock
        ]
 
-instance Enum FunctionKey where
-  toEnum = (funs !!)
-  fromEnum = fromJust . flip elemIndex funs
-  enumFrom s = dropWhile (/= s) funs
-  enumFromTo s t = takeWhile (/= t) (dropWhile (/= s) funs) ++ [t]
-  enumFromThen s t =
-    map toEnum $ enumFromThenTo (fromJust (elemIndex s funs)) (fromJust $ elemIndex t funs) 71
-  enumFromThenTo s t t' =
-    map toEnum $ enumFromThenTo
-      (fromJust $ elemIndex s funs)
-      (fromJust $ elemIndex t funs)
-      (min 71 $ fromJust $ elemIndex t' funs)
+decodeFunctionKey :: Char -> Maybe Keyboard
+decodeFunctionKey = flip lookup functionKeyDic
 
-functionKeyDic :: [(Char, FunctionKey)]
-functionKeyDic = [('\r', InsertLine), ('\b', Delete), ('\a', Undo)] ++ zip ['\xF700'..] funs
+functionKeyDic :: [(Char, Keyboard)]
+functionKeyDic =
+  case break ((== Home) . snd) $ zip ['\xF700'..] funs0 of
+    (as, bs) -> as ++ head bs : drop 2 bs
+

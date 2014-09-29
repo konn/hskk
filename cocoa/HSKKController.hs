@@ -16,9 +16,14 @@ import           Control.Lens           (traverse)
 import           Control.Lens.Extras    (is)
 import           Control.Monad.IO.Class (liftIO)
 import qualified Data.ByteString.Char8  as BS
+import           Data.Char              (ord)
+import           Data.Char              (isControl)
+import           Data.Char              (toUpper)
 import qualified Data.Map               as M
 import           Data.Maybe             (fromMaybe)
 import           Data.Monoid            ((<>))
+import           Data.Monoid            (Any (..))
+import           Data.Monoid            (mconcat)
 import qualified Data.Text              as T
 import           Data.Typeable          (Typeable)
 import           Data.Word              (Word)
@@ -64,7 +69,7 @@ defineSelector
 
 type Client = NSObject
 
-data Session = Session { _dict :: M.Map Client (Char -> IO Bool)
+data Session = Session { _dict :: M.Map Client (SKKCommand -> IO Bool)
                        , _self :: HSKKController
                        } deriving (Typeable)
 
@@ -112,7 +117,7 @@ objc_interface [cunit|
 
 objc_typecheck
 
-pushKey :: Session -> NSObject -> String -> IO Bool
+pushKey :: Session -> NSObject -> [SKKCommand] -> IO Bool
 pushKey session client input = do
   (upd, dict') <- updaterFor client $ _dict session
   accepted <- and <$> mapM upd input
@@ -125,16 +130,33 @@ pushKey session client input = do
 pushKey2 :: Session -> NSObject -> String -> CLong -> CULong -> IO Bool
 pushKey2 session client input key flags = do
   let modifs = decodeModifiers flags
-  nsLog $ "input: " ++ show (input, decodeKey $ head input, decodeModifiers flags)
-  case decodeKey $ head input of
-    Just (Normal c) | all (`elem` [AlphaShift, Shift]) modifs -> pushKey session client [c]
-    Just (Special Delete) -> pushKey session client "\DEL"
-    Just (Special InsertLine) -> pushKey session client "\n"
+      shifted = all (compatible Shift) modifs
+  nsLog $ "input: " ++ show (input, decodeKeyboard key, decodeModifiers flags)
+  if not (isControl $ head input) && all isAlphabeticModifier modifs
+    then pushKey session client $ map Incoming input
+    else case decodeKeyboard key of
+    Just Delete -> pushKey session client [Incoming '\DEL']
+    Just Enter  -> pushKey session client [Incoming '\n']
+    Just Return -> pushKey session client [Incoming '\n']
+    Just Tab    -> pushKey session client [Incoming '\t']
+    Just Space  -> pushKey session client [Incoming ' ']
+    Just (Char 'q') | all (compatible Control) modifs ->
+      pushKey session client [ToggleHankaku]
+    Just (JIS 'q') | all (compatible Control) modifs ->
+      pushKey session client [ToggleHankaku]
+    Just (Char c)
+      | all (`elem` [Alternate, Shift]) modifs ->
+        let c' = if shifted then toUpper c else c
+        in pushKey session client [Incoming c']
+    Just (JIS c)
+      | all (`elem` [Alternate, Shift]) modifs ->
+        let c' = if shifted then toUpper c else c
+        in pushKey session client [Incoming c']
 --     Just Undo -> pushKey session client "\b"
     _ -> return False
 
-updaterFor :: Client -> M.Map Client (Char -> IO Bool)
-           -> IO (Char -> IO Bool, M.Map Client (Char -> IO Bool))
+updaterFor :: Client -> M.Map Client (SKKCommand -> IO Bool)
+           -> IO (SKKCommand -> IO Bool, M.Map Client (SKKCommand -> IO Bool))
 updaterFor sender dic
   | Just upd <- M.lookup sender dic = return (upd, dic)
   | otherwise = do
@@ -170,7 +192,7 @@ updaterFor sender dic
     plainEdited NoHit = return ()
 
 deleteKey :: Session -> NSObject -> IO Bool
-deleteKey session client = pushKey session client "\DEL"
+deleteKey session client = pushKey session client [Incoming '\DEL']
 
 nsLog :: String -> IO ()
 nsLog msg = $(objc ['msg :> ''String] $ void [cexp| NSLog(@"%@", msg) |])

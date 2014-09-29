@@ -1,0 +1,201 @@
+// ----------------------------------------
+// alphabet
+
+A 0x0
+B 0xb
+C 0x8
+D 0x2
+E 0xe
+F 0x3
+G 0x5
+H 0x4
+I 0x22
+J 0x26
+K 0x28
+L 0x25
+M 0x2e
+N 0x2d
+O 0x1f
+P 0x23
+Q 0xc
+R 0xf
+S 0x1
+T 0x11
+U 0x20
+V 0x9
+W 0xd
+X 0x7
+Y 0x10
+Z 0x6
+
+// ----------------------------------------
+// number
+
+KEY_0 0x1d
+KEY_1 0x12
+KEY_2 0x13
+KEY_3 0x14
+KEY_4 0x15
+KEY_5 0x17
+KEY_6 0x16
+KEY_7 0x1a
+KEY_8 0x1c
+KEY_9 0x19
+
+// ----------------------------------------
+// symbol
+
+KEY_`     0x32
+KEY_\     0x2a
+KEY_[  0x21
+KEY_] 0x1e
+KEY_,         0x2b
+KEY_.           0x2f
+KEY_=         0x18
+KEY_-         0x1b
+KEY_'         0x27
+KEY_;     0x29
+KEY_/         0x2c
+
+// ----------------------------------------
+// keypad
+
+KEYPAD_0        0x52
+KEYPAD_1        0x53
+KEYPAD_2        0x54
+KEYPAD_3        0x55
+KEYPAD_4        0x56
+KEYPAD_5        0x57
+KEYPAD_6        0x58
+KEYPAD_7        0x59
+KEYPAD_8        0x5b
+KEYPAD_9        0x5c
+KEYPAD_CLEAR    0x47
+KEYPAD_,    0x5f
+KEYPAD_.      0x41
+KEYPAD_=    0x51
+KEYPAD_-    0x4e
+KEYPAD_* 0x43
+KEYPAD_+     0x45
+KEYPAD_/    0x4b
+
+// ----------------------------------------
+// special
+
+DELETE          0x33
+ENTER           0x4c
+ENTER_POWERBOOK 0x34
+ESCAPE          0x35
+FORWARD_DELETE  0x75
+HELP            0x72
+RETURN          0x24
+SPACE           0x31
+TAB             0x30
+
+// ----------------------------------------
+// function
+F1  0x7a
+F2  0x78
+F3  0x63
+F4  0x76
+F5  0x60
+F6  0x61
+F7  0x62
+F8  0x64
+F9  0x65
+F10 0x6d
+F11 0x67
+F12 0x6f
+F13 0x69
+F14 0x6b
+F15 0x71
+F16 0x6a
+F17 0x40
+F18 0x4f
+F19 0x50
+
+// ----------------------------------------
+// functional
+
+BRIGHTNESS_DOWN 0x91
+BRIGHTNESS_UP   0x90
+DASHBOARD       0x82
+EXPOSE_ALL      0xa0
+LAUNCHPAD       0x83
+MISSION_CONTROL 0xa0
+
+// ----------------------------------------
+// cursor
+
+CURSOR_UP    0x7e
+CURSOR_DOWN  0x7d
+CURSOR_LEFT  0x7b
+CURSOR_RIGHT 0x7c
+
+PAGEUP   0x74
+PAGEDOWN 0x79
+HOME     0x73
+END      0x77
+
+// ----------------------------------------
+// pc keyboard
+
+PC_APPLICATION    0x6e
+PC_BS             0x33
+PC_DEL            0x75
+PC_INSERT         0x72
+PC_KEYPAD_NUMLOCK 0x47
+PC_PAUSE          0x71
+PC_POWER          0x7f
+PC_PRINTSCREEN    0x69
+PC_SCROLLLOCK     0x6b
+
+// ----------------------------------------
+// international
+
+DANISH_DOLLAR 0xa
+DANISH_LESS_THAN 0x32
+
+FRENCH_DOLLAR      0x1e
+FRENCH_EQUAL       0x2c
+FRENCH_HAT         0x21
+FRENCH_MINUS       0x18
+FRENCH_RIGHT_PAREN 0x1b
+
+GERMAN_CIRCUMFLEX   0xa
+GERMAN_LESS_THAN    0x32
+GERMAN_PC_LESS_THAN 0x80
+GERMAN_QUOTE        0x18
+GERMAN_A_UMLAUT     0x27
+GERMAN_O_UMLAUT     0x29
+GERMAN_U_UMLAUT     0x21
+
+ITALIAN_BACKSLASH 0xa
+ITALIAN_LESS_THAN 0x32
+
+JIS_ATMARK        0x21
+JIS_BRACKET_LEFT  0x1e
+JIS_BRACKET_RIGHT 0x2a
+JIS_COLON         0x27
+JIS_DAKUON        0x21
+JIS_EISUU         0x66
+JIS_HANDAKUON     0x1e
+JIS_HAT           0x18
+JIS_KANA          0x68
+JIS_PC_HAN_ZEN    0x32
+JIS_UNDERSCORE    0x5e
+JIS_YEN           0x5d
+
+RUSSIAN_PARAGRAPH 0xa
+RUSSIAN_TILDE     0x32
+
+SPANISH_LESS_THAN         0x32
+SPANISH_ORDINAL_INDICATOR 0xa
+
+SWEDISH_LESS_THAN 0x32
+SWEDISH_SECTION   0xa
+
+SWISS_LESS_THAN 0x32
+SWISS_SECTION   0xa
+
+UK_SECTION 0xa

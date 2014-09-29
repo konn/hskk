@@ -5,7 +5,7 @@
 {-# LANGUAGE TemplateHaskell, TypeFamilies, TypeOperators, ViewPatterns    #-}
 module Text.InputMethod.SKK
        (module Text.InputMethod.SKK.Dictionary,
-        toInput, parseDictionary,
+        toInput, parseDictionary, SKKCommand(..),
         -- * Converters
         romanConv, romanConvE, defKanaTable, defRomanConvE,
         -- * Data-types and lenses
@@ -231,6 +231,7 @@ viewS c s
     else if length (curPage ^. focus) == 1
     then TakeFirst curPage `AndThen` NormalInput
     else Select c curPage       -- Select candidate
+  | c == 'Q' && not (s ^. converting) = StartConvert
   | c == '/' && not (s ^. converting) && not (maybe False isConverting $ s ^. kanaState) = StartSlash
   | c == '\n' && s ^. converting = Complete
   | c == '\DEL' && s ^. converting =
@@ -254,10 +255,23 @@ viewS c s
 nextCompletion :: (a :>> b) -> (a :>> b)
 nextCompletion s = fromMaybe  (s & leftmost) (s & rightward)
 
+data SKKCommand = Incoming Char
+                | ToggleHankaku
+                  deriving (Read, Show, Eq, Ord)
+
 skkConv :: KanaTable -> ConvMode -> Dictionary
         -> Pager -> CandidateSelector
-        -> SKKState -> Char -> (SKKState, [SKKResult])
-skkConv table kana dic pager select s0 c = runSW s0 (go (viewS c s0))
+        -> SKKState -> SKKCommand -> (SKKState, [SKKResult])
+skkConv _ _ _ _ _ s ToggleHankaku
+  | s ^. converting = runSW s $ do
+    mbuf <- use convBuf
+    case mbuf of
+      Just buf -> do
+        lo <- use $ kanaState._Just.tempResult
+        put newSKKState
+        emit $ Completed $ toHankaku $ buf <> fromMaybe "" lo
+      Nothing -> emit $ Idle []
+skkConv table kana dic pager select s0 (Incoming c) = runSW s0 (go (viewS c s0))
   where
     showPage str = do
       mokBuf <- use okuriState
@@ -302,7 +316,9 @@ skkConv table kana dic pager select s0 c = runSW s0 (go (viewS c s0))
       mans <- toKana Nothing
       case mans of
         Right a | not (T.null a) -> emit $ Idle [ Converted a ]
-        _ -> return ()
+        _ -> do compCandidates .= Nothing
+                convBuf .= Just ""
+                convertingWith ""
     go StartOkuri = do
       eans <- toKana Nothing
       case eans of
@@ -315,8 +331,9 @@ skkConv table kana dic pager select s0 c = runSW s0 (go (viewS c s0))
           return ()
         _ -> return ()
     go ToggleKana = do
+      lo <- either fst id <$> toKana Nothing
       buf <- fromMaybe "" <$> use convBuf
-      complete $ toggleKana kana buf
+      complete $ toggleKana kana (buf <> lo)
     go SlashInput = do
       convBuf <>= Just (T.singleton c)
       convertingWith ""
@@ -451,7 +468,7 @@ skkConv table kana dic pager select s0 c = runSW s0 (go (viewS c s0))
           kanaState .= Nothing
           return $ Right finished
 
-defSKKConvE :: Event Char -> SignalGen (Event [SKKResult])
+defSKKConvE :: Event SKKCommand -> SignalGen (Event [SKKResult])
 defSKKConvE = skkConvE defKanaTable Hiragana sDictionary pager sel
   where
     pager = splitAt 4 >>> map pure *** slice 7 >>> uncurry (++)
@@ -465,7 +482,7 @@ slice n = unfoldr phi
 
 skkConvE :: KanaTable -> ConvMode -> Dictionary
          -> Pager -> CandidateSelector
-         -> Event Char -> SignalGen (Event [SKKResult])
+         -> Event SKKCommand -> SignalGen (Event [SKKResult])
 skkConvE table mode dic pag sel input
   = mapAccumE' (skkConv table mode dic pag sel) newSKKState input
 
