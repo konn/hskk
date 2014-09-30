@@ -7,13 +7,14 @@ import           Data.Maybe          (fromMaybe)
 import qualified Data.Text           as T
 import           Data.Tuple          (swap)
 
-data ConvMode = Hiragana | Katakana | HankakuKatakana
+data ConvMode = Hiragana | Katakana | HankakuKatakana | Ascii
               deriving (Read, Show, Eq, Ord, Data, Typeable)
 
 toggleKana :: ConvMode -> T.Text -> T.Text
 toggleKana Hiragana = convKana Hiragana Katakana
 toggleKana Katakana = convKana Katakana Hiragana
 toggleKana HankakuKatakana = id
+toggleKana Ascii = id
 
 toHankaku :: T.Text -> T.Text
 toHankaku = convKana Hiragana HankakuKatakana . convKana Katakana HankakuKatakana
@@ -28,6 +29,7 @@ convKana Katakana HankakuKatakana = T.concatMap (\c -> fromMaybe (T.singleton c)
 convKana Hiragana HankakuKatakana = T.concatMap (\c -> fromMaybe (T.singleton c) $ HM.lookup c hiraHanDic)
 convKana HankakuKatakana Katakana = T.map (\c -> fromMaybe c $ HM.lookup c hanKataDic)
 convKana HankakuKatakana Hiragana = T.map (\c -> fromMaybe c $ HM.lookup c hanHiraDic)
+convKana _ _ = id
 
 hiraKataDic :: HashMap Char Char
 hiraKataDic = HM.fromList hiraKataDic0

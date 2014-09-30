@@ -16,7 +16,8 @@ module Text.InputMethod.SKK
         KanaTable(..), kanaDic, SKKResult(..), defSKKConvE,
         -- * misc
         Pager, CandidateSelector, slice,  _Idle,
-        _Converting, _Okuri, _Page, _ConvNotFound
+        _Converting, _Okuri, _Page, _ConvNotFound,
+        defCSelector, defPager
         ) where
 import Text.InputMethod.SKK.Dictionary
 import Text.InputMethod.SKK.Misc
@@ -84,11 +85,12 @@ toInput str
 parseDictionary :: T.Text -> Either String Dictionary
 parseDictionary = parseOnly dictionary
 
-convChar :: Functor f => ConvMode
+convChar :: Applicative f => ConvMode
          -> (T.Text -> f T.Text) -> KanaEntry -> f KanaEntry
 convChar Hiragana = hiraConv
 convChar Katakana = kataConv
 convChar HankakuKatakana = hanKataConv
+convChar Ascii = const $ pure
 
 data KanaState = KanaState { _tempResult :: Maybe T.Text
                            , _kanaBuf    :: BS.ByteString
@@ -263,7 +265,8 @@ data SKKCommand = Incoming Char
 skkConv :: KanaTable -> ConvMode -> Dictionary
         -> Pager -> CandidateSelector
         -> SKKState -> SKKCommand -> (SKKState, [SKKResult])
-skkConv _ _ _ _ _ s ToggleHankaku
+skkConv _ Ascii _ _ _ s ToggleHankaku = (s, [Idle []])
+skkConv _ _     _ _ _ s ToggleHankaku
   | s ^. converting = runSW s $ do
     mbuf <- use convBuf
     case mbuf of
@@ -272,6 +275,8 @@ skkConv _ _ _ _ _ s ToggleHankaku
         put newSKKState
         emit $ Completed $ toHankaku $ buf <> fromMaybe "" lo
       Nothing -> emit $ Idle []
+skkConv _ _     _ _ _ s ToggleHankaku = (s, [Idle []])
+skkConv _ Ascii _ _ _ s (Incoming c) = (s, [Idle [Converted $ T.singleton c]])
 skkConv table kana dic pager select s0 (Incoming c) = runSW s0 (go (viewS c s0))
   where
     showPage page = do
@@ -474,6 +479,12 @@ defSKKConvE = skkConvE defKanaTable Hiragana sDictionary pager sel
   where
     pager = splitAt 4 >>> map pure *** slice 7 >>> uncurry (++)
     sel c cs = (cs ^?) . ix =<< elemIndex c "asdfjkl"
+
+defPager :: Pager
+defPager = splitAt 4 >>> map pure *** slice 7 >>> uncurry (++)
+
+defCSelector :: CandidateSelector
+defCSelector c cs = (cs ^?) . ix =<< elemIndex c "asdfjkl"
 
 slice :: Int -> [a] -> [[a]]
 slice n = unfoldr phi

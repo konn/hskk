@@ -7,12 +7,12 @@
 */
 NSHumanReadableCopyright = "© Hiromi ISHII, 2014";
 
-CFBundleName = "hSKK";
+CFBundleName = "λSKK";
 CFBundleDisplayName = "λSKK";
 CFBundleShortVersionString = "λSKK version 0.0.1";
 CFBundleGetInfoString = "λSKK version 0.0.1, Copyright 2014, Hiromi ISHII";
 
-com.apple.inputmethod.Japanese.Hiragana = "ひらがな";
-com.apple.inputmethod.Japanese.Katakana = "カタカナ";
-com.apple.inputmethod.Japanese.HalfWidthKana = "半角カナ";
-com.apple.inputmethod.Roman = "ASCII";
+com.apple.inputmethod.Japanese.Hiragana = "λひらがなλ";
+com.apple.inputmethod.Japanese.Katakana = "λカタカナλ";
+com.apple.inputmethod.Japanese.HalfWidthKana = "λ半角カナλ";
+com.apple.inputmethod.Roman = "λASCIIλ";

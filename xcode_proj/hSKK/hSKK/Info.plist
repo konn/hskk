@@ -3,11 +3,11 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleDevelopmentRegion</key>
-	<string>Japanese</string>
+	<string>English</string>
 	<key>CFBundleExecutable</key>
 	<string>hSKK</string>
 	<key>CFBundleIconFile</key>
-	<string>AppIcon.icns</string>
+	<string></string>
 	<key>CFBundleIdentifier</key>
 	<string>com.konn-san.inputmethod.hSKK</string>
 	<key>CFBundleInfoDictionaryVersion</key>
@@ -17,28 +17,45 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleSignature</key>
-	<string>hskk</string>
+	<string>????</string>
 	<key>CFBundleVersion</key>
 	<string>1.0</string>
+	<key>NSMainNibFile</key>
+	<string>MainMenu</string>
+	<key>NSPrincipalClass</key>
+	<string>NSApplication</string>
+	<key>LSBackgroundOnly</key>
+	<true/>
+	<key>InputMethodConnectionName</key>
+	<string>HSKK_Connection</string>
+	<key>InputMethodServerControllerClass</key>
+	<string>HSKKController</string>
+	<key>tsInputMethodIconFileKey</key>
+	<string>icon-03.tiff</string>
+	<key>tsInputMethodCharacterRepertoireKey</key>
+	<array>
+		<string>Jpan</string>
+		<string>Latn</string>
+	</array>
 	<key>ComponentInputModeDict</key>
 	<dict>
 		<key>tsInputModeListKey</key>
 		<dict>
 			<key>com.apple.inputmethod.Japanese.Hiragana</key>
 			<dict>
-				<key>TISInputSourceID</key>
-				<string>konn-san.com.inputmethod.hSKK.Hiragana</string>
+				<key>tsInputModeAlternateMenuIconFileKey</key>
+				<string>hiragana.tiff</string>
 				<key>TISIntendedLanguage</key>
 				<string>ja</string>
 				<key>tsInputModeDefaultStateKey</key>
 				<true/>
 				<key>tsInputModeIsVisibleKey</key>
 				<true/>
-				<key>tsInputModeJISKeyboardShortcutKey</key>
-				<integer>1</integer>
+				<key>tsInputModeKeyEquivalentKey</key>
+				<string>D</string>
+				<key>tsInputModeKeyEquivalentModifiersKey</key>
+				<integer>4608</integer>
 				<key>tsInputModeMenuIconFileKey</key>
-				<string>hiragana.tiff</string>
-				<key>tsInputModeAlternateMenuIconFileKey</key>
 				<string>hiragana.tiff</string>
 				<key>tsInputModePaletteIconFileKey</key>
 				<string>hiragana.tiff</string>
@@ -49,65 +66,65 @@
 			</dict>
 			<key>com.apple.inputmethod.Japanese.Katakana</key>
 			<dict>
-				<key>TISInputSourceID</key>
-				<string>com.konn-san.inputmethod.hSKK.Katakana</string>
+				<key>tsInputModeAlternateMenuIconFileKey</key>
+				<string>katakana.tiff</string>
 				<key>TISIntendedLanguage</key>
 				<string>ja</string>
 				<key>tsInputModeDefaultStateKey</key>
 				<true/>
 				<key>tsInputModeIsVisibleKey</key>
 				<true/>
-				<key>tsInputModeJISKeyboardShortcutKey</key>
-				<integer>2</integer>
+				<key>tsInputModeKeyEquivalentKey</key>
+				<string>C</string>
+				<key>tsInputModeKeyEquivalentModifiersKey</key>
+				<integer>4608</integer>
 				<key>tsInputModeMenuIconFileKey</key>
-				<string>katakana.tiff</string>
-				<key>tsInputModeAlternateMenuIconFileKey</key>
 				<string>katakana.tiff</string>
 				<key>tsInputModePaletteIconFileKey</key>
 				<string>katakana.tiff</string>
 				<key>tsInputModePrimaryInScriptKey</key>
-				<false/>
+				<true/>
 				<key>tsInputModeScriptKey</key>
 				<string>smJapanese</string>
 			</dict>
 			<key>com.apple.inputmethod.Japanese.HalfWidthKana</key>
 			<dict>
-				<key>TISInputSourceID</key>
-				<string>com.konn-san.inputmethod.hSKK.HalfWidthKana</string>
+				<key>tsInputModeAlternateMenuIconFileKey</key>
+				<string>hankaku.tiff</string>
 				<key>TISIntendedLanguage</key>
 				<string>ja</string>
 				<key>tsInputModeDefaultStateKey</key>
 				<true/>
 				<key>tsInputModeIsVisibleKey</key>
 				<true/>
-				<key>tsInputModeJISKeyboardShortcutKey</key>
-				<integer>0</integer>
+				<key>tsInputModeKeyEquivalentKey</key>
+				<string>P</string>
+				<key>tsInputModeKeyEquivalentModifiersKey</key>
+				<integer>4608</integer>
 				<key>tsInputModeMenuIconFileKey</key>
-				<string>hankaku.tiff</string>
-				<key>tsInputModeAlternateMenuIconFileKey</key>
 				<string>hankaku.tiff</string>
 				<key>tsInputModePaletteIconFileKey</key>
 				<string>hankaku.tiff</string>
 				<key>tsInputModePrimaryInScriptKey</key>
-				<false/>
+				<true/>
 				<key>tsInputModeScriptKey</key>
 				<string>smJapanese</string>
 			</dict>
 			<key>com.apple.inputmethod.Roman</key>
 			<dict>
-				<key>TISInputSourceID</key>
-				<string>com.konn-san.inputmethod.hSKK.Roman</string>
 				<key>TISIntendedLanguage</key>
 				<string>en</string>
+				<key>tsInputModeAlternateMenuIconFileKey</key>
+				<string>ascii.tiff</string>
 				<key>tsInputModeDefaultStateKey</key>
 				<true/>
 				<key>tsInputModeIsVisibleKey</key>
 				<true/>
-				<key>tsInputModeJISKeyboardShortcutKey</key>
-				<integer>3</integer>
+				<key>tsInputModeKeyEquivalentKey</key>
+				<string>S</string>
+				<key>tsInputModeKeyEquivalentModifiersKey</key>
+				<integer>4608</integer>
 				<key>tsInputModeMenuIconFileKey</key>
-				<string>ascii.tiff</string>
-				<key>tsInputModeAlternateMenuIconFileKey</key>
 				<string>ascii.tiff</string>
 				<key>tsInputModePaletteIconFileKey</key>
 				<string>ascii.tiff</string>
@@ -125,30 +142,5 @@
 			<string>com.apple.inputmethod.Roman</string>
 		</array>
 	</dict>
-	<key>InputMethodConnectionName</key>
-	<string>HSKK_Connection</string>
-	<key>InputMethodServerControllerClass</key>
-	<string>HSKKController</string>
-	<key>InputMethodServerDelegeteClass</key>
-	<string>HSKKController</string>
-	<key>LSBackgroundOnly</key>
-	<true/>
-	<key>NSMainNibFile</key>
-	<string>MainMenu</string>
-	<key>NSPrincipalClass</key>
-	<string>NSApplication</string>
-	<key>TISIntendedLanguage</key>
-	<string>ja</string>
-	<key>NSHumanReadableCopyright</key>
-	<string>Copyright © 2014年 Hiromi ISHII. All rights reserved.</string>
-	<key>tsInputMethodCharacterRepertoireKey</key>
-	<array>
-		<string>Jpan</string>
-		<string>Kana</string>
-		<string>Hira</string>
-		<string>Latn</string>
-	</array>
-	<key>tsInputMethodIconFileKey</key>
-	<string>icon-03.tiff</string>
 </dict>
 </plist>

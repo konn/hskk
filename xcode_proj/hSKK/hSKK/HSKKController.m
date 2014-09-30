@@ -16,4 +16,10 @@
     return NO;
 }
 
+
+-(void)setValue: (id)value forTag:(long)tag client:(id)sender
+{
+    NSLog(@"mode set: %@", (NSString *) value);
+}
+
 @end

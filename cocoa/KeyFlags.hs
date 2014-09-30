@@ -1,12 +1,14 @@
-{-# LANGUAGE DeriveDataTypeable, OverloadedStrings, TemplateHaskell #-}
-{-# LANGUAGE TypeFamilies                                           #-}
+{-# LANGUAGE DeriveDataTypeable, FlexibleContexts                          #-}
+{-# LANGUAGE NoMonomorphismRestriction, OverloadedStrings, TemplateHaskell #-}
+{-# LANGUAGE TypeFamilies                                                  #-}
 module KeyFlags
        (Masked(..), testCode, compatible, Keyboard(..),
-        decodeKeyboard, decodeModifiers, Modifier(..),
-        decodeFunctionKey, functionKeys, isAlphabeticModifier) where
+        decodeKeyboard, decodeModifiers, Modifier(..), encodeMask,
+        decodeFunctionKey, functionKeys, isAlphabeticModifier, _Char, _JIS) where
 import KeyFlags.Macros
 
 import           Control.Applicative ((<$>))
+import           Control.Lens        (makePrisms)
 import           Data.Bits
 import qualified Data.Text.IO        as T
 import           Foreign.C.Types
@@ -15,8 +17,13 @@ import           Language.Haskell.TH (runIO)
 do table <- runIO $ procLR . parse <$> T.readFile "data/keycodes.dat"
    defineKeyCode "Keyboard" [t| CLong |] table
 
+makePrisms ''Keyboard
+
 decodeModifiers :: Mask Modifier -> [Modifier]
 decodeModifiers b = [m | m <- modifiers, testCode m b]
+
+encodeMask :: (Masked a, Num (Mask a)) => [a] -> Mask a
+encodeMask = foldl (.|.) 0 . map toMask
 
 data Modifier = AlphaShift
               | Shift
