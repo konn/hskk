@@ -83,6 +83,7 @@ buildWith AppSetting {..} = do
     when remove $ removeFilesAfter dest ["//*"]
     () <- cmd "mv" "-f" skeleton out
     copyFile' exe (out </> "Contents" </> "MacOS" </> app)
+    copyFile' ("data/AppIcon.icns") (out </> "Contents" </> "Resources" </> "AppIcon.icns")
     putNormal "Application bundle successfully compiled."
 
   build </> app <.> "app" *> \out -> do
