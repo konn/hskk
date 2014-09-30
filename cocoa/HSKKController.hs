@@ -94,7 +94,6 @@ updateSession sess =
 
 changeMode :: Session -> String -> IO ()
 changeMode sess str = do
-  nsLog $ "input mode changed: " ++ str
   case lookupMode str of
     Nothing -> return ()
     Just kana -> do
@@ -112,7 +111,7 @@ pushKey2 session client input keyCode flags = do
   let modifs = decodeModifiers flags
       key = decodeKeyboard keyCode
       shifted = all (compatible Shift) modifs
-  nsLog $ "input: " ++ show (input, key, decodeModifiers flags)
+  -- nsLog $ "input: " ++ show (input, key, decodeModifiers flags)
   if not (isControl $ head input) && all isAlphabeticModifier modifs &&
      (key & is (_Just . _Char))
     then pushKey session client $ map Incoming input
