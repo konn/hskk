@@ -9,4 +9,8 @@ _build.database
 *_objc.[hm]
 *_stub.[hm]
 hSKK.app
+xcode_proj/hSKK/build
+xcode_proj/hSKK/*.xcodeproj/*
+!xcode_proj/*.xcodeproj/project.pbxproj
+!xcode_proj/*.xcworkspace/contents.xcworkspacedata
 

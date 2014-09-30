@@ -69,7 +69,11 @@ defineSelector
 
 type Client = NSObject
 
-data Session = Session { _dict :: M.Map Client (SKKCommand -> IO Bool)
+data ClientState  = ClientState { pushCmd :: SKKCommand -> IO Bool
+                                , mode    :: ConvMode
+                                } deriving (Typeable)
+
+data Session = Session { _dict :: M.Map Client ClientState
                        , _self :: HSKKController
                        } deriving (Typeable)
 
@@ -117,10 +121,14 @@ objc_interface [cunit|
 
 objc_typecheck
 
+changeMode :: Session -> NSObject -> String -> IO ()
+changeMode sess obj str =
+  return ()
+
 pushKey :: Session -> NSObject -> [SKKCommand] -> IO Bool
 pushKey session client input = do
-  (upd, dict') <- updaterFor client $ _dict session
-  accepted <- and <$> mapM upd input
+  (upd, dict') <- getClientState client $ _dict session
+  accepted <- and <$> mapM (pushCmd upd) input
   let myself = _self session
       sess   = session { _dict = dict' }
   $(objc ['myself :> ''HSKKController, 'sess :> ''Session] $
@@ -155,9 +163,9 @@ pushKey2 session client input key flags = do
 --     Just Undo -> pushKey session client "\b"
     _ -> return False
 
-updaterFor :: Client -> M.Map Client (SKKCommand -> IO Bool)
-           -> IO (SKKCommand -> IO Bool, M.Map Client (SKKCommand -> IO Bool))
-updaterFor sender dic
+getClientState :: Client -> M.Map Client ClientState
+           -> IO (ClientState, M.Map Client ClientState)
+getClientState sender dic
   | Just upd <- M.lookup sender dic = return (upd, dic)
   | otherwise = do
     eev <- newExternalEvent
@@ -167,7 +175,8 @@ updaterFor sender dic
       _ <- generatorE $ mapM edited <$> ev
       return $ all (noneOf (_Idle . traverse) (is _NoHit)) <$> eventToBehavior (flattenE ev)
     let push inp = triggerExternalEvent eev inp >> step
-    return $ (push, M.insert sender push dic)
+        st = ClientState push Hiragana
+    return $ (st, M.insert sender st dic)
   where
     edited (Idle eds) = mapM_ plainEdited eds
     edited (Page cands mokuri) = do
@@ -191,16 +200,13 @@ updaterFor sender dic
       liftIO $ sender # setMarkedText (BS.unpack buf) 0 (BS.length buf)
     plainEdited NoHit = return ()
 
-deleteKey :: Session -> NSObject -> IO Bool
-deleteKey session client = pushKey session client [Incoming '\DEL']
-
 nsLog :: String -> IO ()
 nsLog msg = $(objc ['msg :> ''String] $ void [cexp| NSLog(@"%@", msg) |])
 
 newSession :: HSKKController -> IO Session
 newSession ctrl = return $ Session M.empty ctrl
 
-objc_implementation [ Typed 'pushKey, Typed 'pushKey2, Typed 'deleteKey, Typed 'newSession ]
+objc_implementation [ Typed 'pushKey2, Typed 'changeMode, Typed 'newSession ]
   [cunit|
 @implementation HSKKController
 - (id)initWithServer:(typename IMKServer *)server
@@ -212,6 +218,11 @@ objc_implementation [ Typed 'pushKey, Typed 'pushKey2, Typed 'deleteKey, Typed '
     self.session = newSession(self);
   }
   return self;
+}
+
+-(void)setValue: (id)value forTag:(unsigned long)tag client:(id)sender
+{
+  changeMode(self.session, sender, (typename NSString *)value);
 }
 
 - (typename BOOL) inputText:(typename NSString *)string

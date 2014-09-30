@@ -30,7 +30,8 @@ import           Control.Lens          ((&), (.=), (<%=), (<<>=), (<>=), (<?=))
 import           Control.Lens          ((?=), (^.), (^?), _2, _Just, _head)
 import           Control.Lens.Extras   (is)
 import           Control.Monad         (unless)
-import           Control.Zipper
+import           Control.Zipper        ((:>>), Top, focus, fromWithin, leftmost)
+import           Control.Zipper        (leftward, rightward, zipper)
 import           Data.Attoparsec.Text  (parseOnly)
 import qualified Data.ByteString.Char8 as BS
 import           Data.Char             (isAlpha, isAscii, isAsciiUpper, toLower)
@@ -273,23 +274,23 @@ skkConv _ _ _ _ _ s ToggleHankaku
       Nothing -> emit $ Idle []
 skkConv table kana dic pager select s0 (Incoming c) = runSW s0 (go (viewS c s0))
   where
-    showPage str = do
+    showPage page = do
       mokBuf <- use okuriState
-      emit $ Page str (snd <$> mokBuf)
+      emit $ Page page (convKana Hiragana kana . snd <$> mokBuf)
     notFound body mokuri = do
       put newSKKState
       emit $ ConvNotFound body mokuri
     complete str = do
       a <- use okuriState
       put newSKKState
-      emit $ Completed $ str <> maybe "" snd a
+      emit $ Completed $ convKana Hiragana kana $ str <> maybe "" snd a
     okuriWith temp = do
       body  <- use convBuf
       okBuf <- use okuriBuf
-      emit $ Okuri (fromMaybe "" body) (okBuf <> temp)
+      emit $ Okuri (convKana Hiragana kana $ fromMaybe "" body) (convKana Hiragana kana $ okBuf <> temp)
     convertingWith temp = do
       buf <- use convBuf
-      emit $ Converting $ (fromMaybe "" buf) <> temp
+      emit $ Converting $ convKana Hiragana kana $ (fromMaybe "" buf) <> temp
     go Complete = do
       buf <- fromMaybe "" <$> use convBuf
       complete buf
@@ -453,7 +454,7 @@ skkConv table kana dic pager select s0 (Incoming c) = runSW s0 (go (viewS c s0))
       emit $ Idle rs
     toKana mc = do
       ks <- fromMaybe (newKanaState table) <$> use kanaState
-      let (ks', rs) = romanConv table kana ks mc
+      let (ks', rs) = romanConv table Hiragana ks mc
           (prgs, cvd) = partition (is _InProgress) rs
           finished = T.concat $ map toT cvd
           toT NoHit          = T.singleton c

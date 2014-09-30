@@ -15,6 +15,11 @@
 		958EA58E19D14EB800B191A9 /* icon-03.tiff in Resources */ = {isa = PBXBuildFile; fileRef = 958EA58D19D14EB800B191A9 /* icon-03.tiff */; };
 		958EA59119D1501200B191A9 /* HSKKController.m in Sources */ = {isa = PBXBuildFile; fileRef = 958EA59019D1501200B191A9 /* HSKKController.m */; };
 		958EA59A19D151DF00B191A9 /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 958EA59919D151DF00B191A9 /* Cocoa.framework */; };
+		95F1BC0B19DA773C000B286C /* hiragana.tiff in Resources */ = {isa = PBXBuildFile; fileRef = 95F1BC0A19DA773C000B286C /* hiragana.tiff */; };
+		95F1BC0E19DA7832000B286C /* katakana.tiff in Resources */ = {isa = PBXBuildFile; fileRef = 95F1BC0D19DA7832000B286C /* katakana.tiff */; };
+		95F1BC1019DA7994000B286C /* hankaku.tiff in Resources */ = {isa = PBXBuildFile; fileRef = 95F1BC0F19DA7994000B286C /* hankaku.tiff */; };
+		95F1BC1419DA7EA9000B286C /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = 95F1BC1319DA7EA9000B286C /* InfoPlist.strings */; };
+		95F1BC1619DA8038000B286C /* ascii.tiff in Resources */ = {isa = PBXBuildFile; fileRef = 95F1BC1519DA8038000B286C /* ascii.tiff */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -37,12 +42,17 @@
 		958EA57D19D1440B00B191A9 /* hSKKTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = hSKKTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		958EA58219D1440B00B191A9 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		958EA58319D1440B00B191A9 /* hSKKTests.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = hSKKTests.m; sourceTree = "<group>"; };
-		958EA58D19D14EB800B191A9 /* icon-03.tiff */ = {isa = PBXFileReference; lastKnownFileType = image.tiff; name = "icon-03.tiff"; path = "../icon-03.tiff"; sourceTree = "<group>"; };
+		958EA58D19D14EB800B191A9 /* icon-03.tiff */ = {isa = PBXFileReference; lastKnownFileType = image.tiff; path = "icon-03.tiff"; sourceTree = "<group>"; };
 		958EA58F19D1501200B191A9 /* HSKKController.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = HSKKController.h; sourceTree = "<group>"; };
 		958EA59019D1501200B191A9 /* HSKKController.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = HSKKController.m; sourceTree = "<group>"; };
 		958EA59919D151DF00B191A9 /* Cocoa.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Cocoa.framework; path = System/Library/Frameworks/Cocoa.framework; sourceTree = SDKROOT; };
 		958EA59E19D1539500B191A9 /* AppKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AppKit.framework; path = ../../../../../../../../../System/Library/Frameworks/AppKit.framework; sourceTree = "<group>"; };
 		958EA5A019D153AF00B191A9 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = ../../../../../../../../../System/Library/Frameworks/Foundation.framework; sourceTree = "<group>"; };
+		95F1BC0A19DA773C000B286C /* hiragana.tiff */ = {isa = PBXFileReference; lastKnownFileType = image.tiff; name = hiragana.tiff; path = hSKK/hiragana.tiff; sourceTree = "<group>"; };
+		95F1BC0D19DA7832000B286C /* katakana.tiff */ = {isa = PBXFileReference; lastKnownFileType = image.tiff; path = katakana.tiff; sourceTree = "<group>"; };
+		95F1BC0F19DA7994000B286C /* hankaku.tiff */ = {isa = PBXFileReference; lastKnownFileType = image.tiff; path = hankaku.tiff; sourceTree = "<group>"; };
+		95F1BC1319DA7EA9000B286C /* InfoPlist.strings */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.strings; path = InfoPlist.strings; sourceTree = "<group>"; };
+		95F1BC1519DA8038000B286C /* ascii.tiff */ = {isa = PBXFileReference; lastKnownFileType = image.tiff; path = ascii.tiff; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -68,6 +78,7 @@
 		958EA56119D1440B00B191A9 = {
 			isa = PBXGroup;
 			children = (
+				95F1BC0C19DA774F000B286C /* Pictures */,
 				958EA56C19D1440B00B191A9 /* hSKK */,
 				958EA58019D1440B00B191A9 /* hSKKTests */,
 				958EA59B19D1535100B191A9 /* Frameworks */,
@@ -88,7 +99,6 @@
 			isa = PBXGroup;
 			children = (
 				958EA57419D1440B00B191A9 /* Images.xcassets */,
-				958EA58D19D14EB800B191A9 /* icon-03.tiff */,
 				958EA57619D1440B00B191A9 /* MainMenu.xib */,
 				958EA56D19D1440B00B191A9 /* Supporting Files */,
 			);
@@ -102,6 +112,7 @@
 				958EA58F19D1501200B191A9 /* HSKKController.h */,
 				958EA59019D1501200B191A9 /* HSKKController.m */,
 				958EA56F19D1440B00B191A9 /* main.m */,
+				95F1BC1319DA7EA9000B286C /* InfoPlist.strings */,
 			);
 			name = "Supporting Files";
 			sourceTree = "<group>";
@@ -148,6 +159,18 @@
 				958EA59E19D1539500B191A9 /* AppKit.framework */,
 			);
 			name = "Other Frameworks";
+			sourceTree = "<group>";
+		};
+		95F1BC0C19DA774F000B286C /* Pictures */ = {
+			isa = PBXGroup;
+			children = (
+				95F1BC1519DA8038000B286C /* ascii.tiff */,
+				95F1BC0F19DA7994000B286C /* hankaku.tiff */,
+				95F1BC0D19DA7832000B286C /* katakana.tiff */,
+				95F1BC0A19DA773C000B286C /* hiragana.tiff */,
+				958EA58D19D14EB800B191A9 /* icon-03.tiff */,
+			);
+			name = Pictures;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -230,9 +253,14 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				95F1BC1019DA7994000B286C /* hankaku.tiff in Resources */,
+				95F1BC1419DA7EA9000B286C /* InfoPlist.strings in Resources */,
+				95F1BC0E19DA7832000B286C /* katakana.tiff in Resources */,
+				95F1BC1619DA8038000B286C /* ascii.tiff in Resources */,
 				958EA57519D1440B00B191A9 /* Images.xcassets in Resources */,
 				958EA57819D1440B00B191A9 /* MainMenu.xib in Resources */,
 				958EA58E19D14EB800B191A9 /* icon-03.tiff in Resources */,
+				95F1BC0B19DA773C000B286C /* hiragana.tiff in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

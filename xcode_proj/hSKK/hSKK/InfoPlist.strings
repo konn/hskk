@@ -1,0 +1,18 @@
+/* 
+  InfoPlist.strings
+  hSKK
+
+  Created by 石井 大海 on 2014/09/30.
+  Copyright (c) 2014年 Hiromi ISHII. All rights reserved.
+*/
+NSHumanReadableCopyright = "© Hiromi ISHII, 2014";
+
+CFBundleName = "hSKK";
+CFBundleDisplayName = "λSKK";
+CFBundleShortVersionString = "λSKK version 0.0.1";
+CFBundleGetInfoString = "λSKK version 0.0.1, Copyright 2014, Hiromi ISHII";
+
+com.apple.inputmethod.Japanese.Hiragana = "ひらがな";
+com.apple.inputmethod.Japanese.Katakana = "カタカナ";
+com.apple.inputmethod.Japanese.HalfWidthKana = "半角カナ";
+com.apple.inputmethod.Roman = "ASCII";
