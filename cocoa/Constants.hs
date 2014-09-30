@@ -1,4 +1,5 @@
 module Constants where
+import Data.Maybe           (fromMaybe)
 import Text.InputMethod.SKK hiding (lookup)
 
 connName :: String
@@ -13,6 +14,12 @@ lookupMode = flip lookup $ [(hiraganaModeKey, Hiragana)
                            ,(hankakuModeKey, HankakuKatakana)
                            ,(asciiModeKey, Ascii)
                            ]
+
+modeToString :: ConvMode -> String
+modeToString Hiragana = hiraganaModeKey
+modeToString Katakana = katakanaModeKey
+modeToString HankakuKatakana = hankakuModeKey
+modeToString Ascii = asciiModeKey
 
 hiraganaModeKey, katakanaModeKey, hankakuModeKey, asciiModeKey :: String
 hiraganaModeKey = "com.apple.inputmethod.Japanese.Hiragana"

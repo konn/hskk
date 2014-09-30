@@ -17,7 +17,7 @@ module Text.InputMethod.SKK
         -- * misc
         Pager, CandidateSelector, slice,  _Idle,
         _Converting, _Okuri, _Page, _ConvNotFound,
-        defCSelector, defPager
+        defCSelector, defPager, isIdling, toggleKana
         ) where
 import Text.InputMethod.SKK.Dictionary
 import Text.InputMethod.SKK.Misc
@@ -29,6 +29,8 @@ import           Control.Lens          (ix, makeLenses, makePrisms, makeWrapped)
 import           Control.Lens          (to, traverse, use, uses, view, (%=))
 import           Control.Lens          ((&), (.=), (<%=), (<<>=), (<>=), (<?=))
 import           Control.Lens          ((?=), (^.), (^?), _2, _Just, _head)
+import           Control.Lens          (anyOf)
+import           Control.Lens          (each)
 import           Control.Lens.Extras   (is)
 import           Control.Monad         (unless)
 import           Control.Zipper        ((:>>), Top, focus, fromWithin, leftmost)
@@ -185,6 +187,11 @@ data SKKState = SKKState { _kanaState      :: Maybe KanaState
                          } deriving (Typeable)
 makeLenses ''SKKState
 makePrisms ''SKKResult
+
+isIdling :: SKKResult -> Bool
+isIdling r =
+  or [anyOf (_Idle.each) (\a -> is _NoHit a || is _Converted a) r
+     ,r & is _Completed, r & is _ConvNotFound]
 
 newSKKState :: SKKState
 newSKKState = SKKState Nothing Nothing Nothing Nothing False Nothing
@@ -530,3 +537,4 @@ formatEntry (KanaEntry a b c md) =
 
 formatKanaTable :: KanaTable -> T.Text
 formatKanaTable = T.unlines . map formatPair . Trie.toList . view kanaDic
+

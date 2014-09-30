@@ -12,17 +12,18 @@ import Messaging
 import Text.InputMethod.SKK
 
 import           Control.Applicative    ((<$>))
-import           Control.Lens           (noneOf, (%~), (&), (.~), (^.), _Just)
-import           Control.Lens           (traverse)
-import           Control.Lens           (makeLenses)
+import           Control.Lens           (makeLenses, noneOf, to, traverse, (%~))
+import           Control.Lens           ((&), (.~), (^.), _Just, _last)
+import           Control.Lens           ((^?))
 import           Control.Lens.Extras    (is)
 import           Control.Monad.IO.Class (liftIO)
 import qualified Data.ByteString.Char8  as BS
-import           Data.Char              (isControl)
-import           Data.Char              (toUpper)
+import           Data.Char              (isControl, toUpper)
+import           Data.IORef             (IORef, newIORef, writeIORef)
+import           Data.IORef             (readIORef)
 import qualified Data.Map               as M
 import           Data.Maybe             (fromMaybe)
-import           Data.Monoid            ((<>))
+import           Data.Monoid            (Last (..), mconcat, (<>))
 import qualified Data.Text              as T
 import           Data.Typeable          (Typeable)
 import           FRP.Ordrea
@@ -48,6 +49,23 @@ idMarshaller ''HSKKController
 defineClass "NSString"    (Just ''NSObject)
 idMarshaller ''NSString
 
+{-
+
+marshalConvMode :: ConvMode -> IO NSString
+marshalConvMode Hiragana = $(objc [Typed 'hiraganaModeKey] $ ''NSString <: [cexp| hiraganaModeKey |])
+marshalConvMode Katakana = $(objc [Typed 'katakanaModeKey] $ ''NSString <: [cexp| katakanaModeKey |])
+marshalConvMode HankakuKatakana = $(objc [Typed 'hankakuModeKey] $ ''NSString <: [cexp| hankakuModeKey |])
+marshalConvMode Ascii = $(objc [Typed 'asciiModeKey] $ ''NSString <: [cexp| asciiModeKey |])
+
+demarhsalConvMode :: NSString -> IO ConvMode
+demarhsalConvMode str = $(objc [Typed 'lookupMode_, 'str :> ''NSString] $
+                          ''ConvMode <: [cexp| lookupMode_(str) |])
+
+objc_marshaller 'marshalConvMode 'demarhsalConvMode
+
+-}
+
+
 defineSelector
   newSelector { selector = "insertText"
               , reciever = (''NSObject, "sender")
@@ -65,10 +83,18 @@ defineSelector
                                       replacementRange: NSMakeRange(NSNotFound, NSNotFound)]|]
               }
 
+defineSelector
+  newSelector { selector = "selectInputMode"
+              , reciever = (''NSObject, "sender")
+              , arguments = ["mode" :>>: ''String]
+              , definition = [cexp| [(id)sender selectInputMode: mode]|]
+              }
+
 type Client = NSObject
 
 data ClientState  = ClientState { pushCmd :: SKKCommand -> IO Bool
                                 , mode    :: ConvMode
+                                , idling  :: IORef Bool
                                 } deriving (Typeable)
 
 data Session = Session { _dict     :: M.Map Client ClientState
@@ -93,26 +119,40 @@ updateSession sess =
        void [cexp| myself.session = sess |])
 
 changeMode :: Session -> String -> IO ()
-changeMode sess str = do
-  case lookupMode str of
-    Nothing -> return ()
-    Just kana -> do
-      updateSession $ sess & convMode .~ kana
-      return ()
+changeMode sess str = maybe (return ()) (changeMode' sess) $ lookupMode str
+
+changeMode' :: Session -> ConvMode -> IO ()
+changeMode' sess kana = do
+  updateSession $ sess & convMode .~ kana
+  return ()
 
 pushKey :: Session -> NSObject -> [SKKCommand] -> IO Bool
 pushKey session client input = do
-  upd <- getClientState client session
-  accepted <- and <$> mapM upd input
+  cst <- getClientState client session
+  accepted <- and <$> mapM (pushCmd cst) input
   return accepted
 
 pushKey2 :: Session -> NSObject -> String -> CLong -> CULong -> IO Bool
 pushKey2 session client input keyCode flags = do
+  cst <- getClientState client session
+  idle <- readIORef $ idling cst
   let modifs = decodeModifiers flags
       key = decodeKeyboard keyCode
       shifted = all (compatible Shift) modifs
-  -- nsLog $ "input: " ++ show (input, key, decodeModifiers flags)
-  if not (isControl $ head input) && all isAlphabeticModifier modifs &&
+      mode = session ^. convMode
+  if null modifs && idle && input == "q"
+  then case mode of
+        HankakuKatakana -> client # selectInputMode (modeToString Hiragana) >> return True
+        Hiragana -> client # selectInputMode (modeToString Katakana) >> return True
+        Katakana -> client # selectInputMode (modeToString Hiragana) >> return True
+        Ascii    -> pushKey session client [Incoming 'q']
+  else if null modifs && idle && input == "l"
+  then case mode of
+        HankakuKatakana -> client # selectInputMode (modeToString Ascii) >> return True
+        Hiragana -> client # selectInputMode (modeToString Ascii) >> return True
+        Katakana -> client # selectInputMode (modeToString Ascii) >> return True
+        Ascii    -> pushKey session client [Incoming 'l']
+  else if not (isControl $ head input) && all isAlphabeticModifier modifs &&
      (key & is (_Just . _Char))
     then pushKey session client $ map Incoming input
     else case key of
@@ -121,10 +161,14 @@ pushKey2 session client input keyCode flags = do
     Just Return -> pushKey session client [Incoming '\n']
     Just Tab    -> pushKey session client [Incoming '\t']
     Just Space  -> pushKey session client [Incoming ' ']
-    Just (Char 'q') | all (compatible Control) modifs ->
-      pushKey session client [ToggleHankaku]
-    Just (JIS 'q') | all (compatible Control) modifs ->
-      pushKey session client [ToggleHankaku]
+    Just (Char 'q') | all (compatible Control) modifs && not (null modifs) ->
+      if idle && mode /= Ascii
+      then client # selectInputMode (modeToString HankakuKatakana) >> return True
+      else pushKey session client [ToggleHankaku]
+    Just (JIS 'q') | all (compatible Control) modifs && not (null modifs) ->
+      if idle && mode /= Ascii
+      then client # selectInputMode (modeToString HankakuKatakana) >> return True
+      else pushKey session client [ToggleHankaku]
     Just JisEisuu -> return True
     Just JisKana  -> return True
     Just (Char c)
@@ -138,24 +182,31 @@ pushKey2 session client input keyCode flags = do
 --     Just Undo -> pushKey session client "\b"
     _ -> return False
 
-getClientState :: Client -> Session
-           -> IO (SKKCommand -> IO Bool)
+getCurrentMode :: Session -> String
+getCurrentMode sess = sess ^. convMode . to modeToString
+
+getClientState :: Client -> Session -> IO ClientState
 getClientState sender sess0
   | Just st <- M.lookup sender $ sess0 ^. dict
-  , sess0 ^. convMode == mode st = return $ pushCmd st
+  , sess0 ^. convMode == mode st = return st
   | otherwise = do
     let kana = sess0 ^. convMode
+    isIn <- newIORef True
     eev <- newExternalEvent
     step <- start $ do
       input <- externalE eev
       ev <- skkConvE defKanaTable kana sDictionary defPager defCSelector input
       _ <- generatorE $ mapM edited <$> ev
-      return $ all (noneOf (_Idle . traverse) (is _NoHit)) <$> eventToBehavior (flattenE ev)
-    let push inp = triggerExternalEvent eev inp >> step
-        st = ClientState push kana
+      return $ eventToBehavior (flattenE ev)
+    let push inp = do
+          triggerExternalEvent eev inp
+          ans <- step
+          writeIORef isIn $ maybe True isIdling $ ans ^? _last
+          return $ all (noneOf (_Idle . traverse) (is _NoHit)) ans
+        st = ClientState push kana isIn
         sess = sess0 & dict %~ M.insert sender st
     updateSession sess
-    return push
+    return st
   where
     edited (Idle eds) = mapM_ plainEdited eds
     edited (Page cands mokuri) = do
@@ -185,7 +236,8 @@ nsLog msg = $(objc ['msg :> ''String] $ void [cexp| NSLog(@"%@", msg) |])
 newSession :: HSKKController -> IO Session
 newSession ctrl = return $ Session M.empty ctrl Hiragana
 
-objc_implementation [ Typed 'pushKey2, Typed 'changeMode, Typed 'newSession ]
+objc_implementation [ Typed 'pushKey2, Typed 'changeMode
+                    , Typed 'newSession, Typed 'getCurrentMode ]
   [cunit|
 @implementation HSKKController
 - (id)initWithServer:(typename IMKServer *)server
@@ -210,6 +262,11 @@ objc_implementation [ Typed 'pushKey2, Typed 'changeMode, Typed 'newSession ]
                      client:(id)sender
 {
    return pushKey2(self.session, sender, string, keyCode, flags);
+}
+
+- (id)valueForTag:(long) tag client:(id)sender
+{
+  return (id)getCurrentMode(self.session);
 }
 
 @end
