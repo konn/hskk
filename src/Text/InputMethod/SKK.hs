@@ -1,6 +1,6 @@
 {-# LANGUAGE DataKinds, DeriveDataTypeable, FlexibleContexts               #-}
 {-# LANGUAGE FlexibleInstances, GADTs, LambdaCase, LiberalTypeSynonyms     #-}
-{-# LANGUAGE MultiParamTypeClasses, NoMonomorphismRestriction              #-}
+{-# LANGUAGE MultiParamTypeClasses, MultiWayIf, NoMonomorphismRestriction  #-}
 {-# LANGUAGE OverloadedStrings, PatternGuards, PatternSynonyms, RankNTypes #-}
 {-# LANGUAGE TemplateHaskell, TypeFamilies, TypeOperators, ViewPatterns    #-}
 module Text.InputMethod.SKK
@@ -16,7 +16,7 @@ module Text.InputMethod.SKK
         KanaTable(..), kanaDic, SKKResult(..), defSKKConvE,
         -- * misc
         Pager, CandidateSelector, slice,  _Idle,
-        _Converting, _Okuri, _Page, _ConvNotFound,
+        _Converting, _Okuri, _ConvFound, _ConvNotFound,
         defCSelector, defPager, isIdling, toggleKana
         ) where
 import Text.InputMethod.SKK.Dictionary
@@ -25,24 +25,24 @@ import Text.InputMethod.SKK.Misc
 import           Control.Applicative   (Applicative, pure, (<$>))
 import           Control.Arrow         (second, (***), (>>>))
 import           Control.Effect        hiding (select, swap)
-import           Control.Lens          (ix, makeLenses, makePrisms, makeWrapped)
-import           Control.Lens          (to, traverse, use, uses, view, (%=))
-import           Control.Lens          ((&), (.=), (<%=), (<<>=), (<>=), (<?=))
-import           Control.Lens          ((?=), (^.), (^?), _2, _Just, _head)
-import           Control.Lens          (anyOf)
-import           Control.Lens          (each)
+import           Control.Lens          (anyOf, each, ix, makeLenses, makePrisms)
+import           Control.Lens          (makeWrapped, to, traverse, use, uses)
+import           Control.Lens          (view, (%=), (&), (.=), (<%=), (<<>=))
+import           Control.Lens          ((<>=), (<?=), (?=), (^.), (^?), _2)
+import           Control.Lens          (_Just)
 import           Control.Lens.Extras   (is)
 import           Control.Monad         (unless)
 import           Control.Zipper        ((:>>), Top, focus, fromWithin, leftmost)
-import           Control.Zipper        (leftward, rightward, zipper)
+import           Control.Zipper        (rightward, zipper)
 import           Data.Attoparsec.Text  (parseOnly)
 import qualified Data.ByteString.Char8 as BS
 import           Data.Char             (isAlpha, isAscii, isAsciiUpper, toLower)
 import           Data.Data             (Data, Typeable)
 import qualified Data.HashMap.Strict   as HM
 import           Data.List             (elemIndex, partition, unfoldr)
-import           Data.Maybe            (fromJust, fromMaybe, isJust)
+import           Data.Maybe            (fromMaybe, isJust)
 import           Data.Monoid           (Monoid (..), (<>))
+import           Data.Reflection       (Given (..), give)
 import qualified Data.Text             as T
 import qualified Data.Text.Encoding    as T
 import           Data.Trie             hiding (lookup, null)
@@ -51,6 +51,8 @@ import           Data.Tuple            (swap)
 import           FRP.Ordrea            (Event, SignalGen, eventToBehavior)
 import           FRP.Ordrea            (externalE, mapAccumE, newExternalEvent)
 import           FRP.Ordrea            (start, triggerExternalEvent)
+import           FRP.Ordrea            ((<@>))
+import           FRP.Ordrea            (Behavior)
 import           Language.Haskell.TH   (litE, runIO, stringL)
 import           Prelude               hiding (lookup)
 
@@ -62,7 +64,7 @@ data KanaEntry = KanaEntry { _hiraConv    :: T.Text
 
 makeLenses ''KanaEntry
 
-data KanaResult = Converted T.Text | NoHit | InProgress BS.ByteString | Reset
+data KanaResult = Converted T.Text | NoHit | InProgress BS.ByteString
                deriving (Read, Show, Eq, Ord, Data, Typeable)
 
 makeLenses ''KanaResult
@@ -121,6 +123,10 @@ runSW s0 act = swap $ runEffect $ runState s0 $ snd <$> runWriter act
 emit :: EffectWriter [a] l => a -> Effect l ()
 emit = tell . (:[])
 
+when :: EffectWriter [SKKResult] l => Bool -> Effect l () -> Effect l ()
+when True  act = act
+when False _   = emit $ Idle []
+
 romanConv :: KanaTable -> ConvMode -> KanaState -> Maybe Char -> (KanaState, [KanaResult])
 romanConv dic mode s = runSW s . go
   where
@@ -173,15 +179,14 @@ type CandidateSelector = forall a. Char -> [a] -> Maybe a
 data SKKResult = Idle [KanaResult]
                | Converting T.Text
                | Okuri T.Text T.Text
-               | Completed T.Text
-               | Page [T.Text] (Maybe T.Text)
+               | Finished T.Text
+               | ConvFound T.Text (Maybe (Char, T.Text)) [T.Text]
                | ConvNotFound T.Text (Maybe (Char, T.Text))
                deriving (Read, Show, Eq, Ord, Data, Typeable)
 
 data SKKState = SKKState { _kanaState      :: Maybe KanaState
                          , _okuriState     :: Maybe (Char, T.Text)
                          , _convBuf        :: Maybe T.Text
-                         , _selection      :: Maybe (Top :>> [[T.Text]] :>> [T.Text])
                          , _slashed        :: Bool
                          , _compCandidates :: Maybe (Top :>> [T.Text] :>> T.Text)
                          } deriving (Typeable)
@@ -191,140 +196,185 @@ makePrisms ''SKKResult
 isIdling :: SKKResult -> Bool
 isIdling r =
   or [anyOf (_Idle.each) (\a -> is _NoHit a || is _Converted a) r
-     ,r & is _Completed, r & is _ConvNotFound]
+     ,r & is _Finished, r & is _ConvNotFound]
 
 newSKKState :: SKKState
-newSKKState = SKKState Nothing Nothing Nothing Nothing False Nothing
+newSKKState = SKKState Nothing Nothing Nothing False Nothing
 
 okuriBuf :: Applicative f => (T.Text -> f T.Text) -> SKKState -> f SKKState
 okuriBuf = okuriState . _Just . _2
 
 hasOkuri = okuriState . to isJust
 converting = convBuf . to isJust
-selecting = selection . to isJust
 kanaing = kanaState . to isJust
 
-data View = NextPage (Top :>> [[T.Text]] :>> [T.Text])
-          | PrevPage (Top :>> [[T.Text]] :>> [T.Text])
-          | TakeFirst (Top :>> [[T.Text]] :>> [T.Text])
-          | Select Char (Top :>> [[T.Text]] :>> [T.Text])
-          | ConvertInput
-          | Convert T.Text (Maybe (Char, T.Text))
-          | OkuriInput
-          | AndThen View View
-          | NormalInput
-          | StartConvert
-          | StartOkuri
-          | DeleteOkuri
-          | DeleteConvert
-          | Complete
-          | StartSlash
-          | SlashInput
-          | Noop
-          | DoCompletion
-          | ToggleKana
+data InputView = ConvertInput
+               | OkuriInput
+               | AndThen InputView InputView
+               | NormalInput
+               | StartConvert
+               | StartOkuri
+               | StartSlash
+               | SlashInput
+                 deriving (Read, Show, Eq, Ord)
 
-viewS :: Char -> SKKState -> View
+viewS :: Char -> SKKState -> InputView
 viewS c s
-  | s ^. selecting =            -- In candidate selection...
-    let curPage = fromJust (s ^. selection)
-    in if c == ' '              -- Go next page
-    then NextPage curPage
-    else if c == '\DEL' || c == 'x' -- Go back page
-    then PrevPage curPage
-    else if c == '\n'           -- Take first candidate
-    then TakeFirst curPage
-    else if isAsciiUpper c && length (curPage ^. focus) == 1 && not (s ^. kanaing)
-    then TakeFirst curPage `AndThen` StartConvert `AndThen` ConvertInput
-    else if length (curPage ^. focus) == 1 && c == '/'
-    then TakeFirst curPage `AndThen` StartSlash
-    else if length (curPage ^. focus) == 1
-    then TakeFirst curPage `AndThen` NormalInput
-    else Select c curPage       -- Select candidate
   | c == 'Q' && not (s ^. converting) = StartConvert
   | c == '/' && not (s ^. converting) && not (maybe False isConverting $ s ^. kanaState) = StartSlash
-  | c == '\n' && s ^. converting = Complete
-  | c == '\DEL' && s ^. converting =
-      if s ^. hasOkuri
-      then DeleteOkuri
-      else DeleteConvert
   | isAsciiUpper c && not (s ^. converting) = ConvertInput -- Start new conversion phase
-  | c == ' ' && s ^. converting        = Convert (s ^. convBuf._Just) (s ^. okuriState)
-                                         -- Convert inputted somethings
-  | c == 'q' && s ^. converting && not (s ^. hasOkuri) = ToggleKana
   | isAsciiUpper c && s ^. converting && not (s ^. hasOkuri) &&
-    (s ^. convBuf)  /= Just "" &&
-    not (s ^. selecting) &&  not (s ^. slashed)  = StartOkuri `AndThen` OkuriInput
+    (s ^. convBuf)  /= Just "" && not (s ^. slashed)  = StartOkuri `AndThen` OkuriInput
   | s ^. converting && s ^. slashed = SlashInput
-  | s ^. converting && not (s ^. hasOkuri) && c == '\t' = DoCompletion
   | s ^. converting && not (s ^. hasOkuri) = ConvertInput
   | s ^. converting && s ^. hasOkuri = OkuriInput
-  | c == '\DEL' && not (s ^. kanaing) = Noop
   | otherwise = NormalInput
 
 nextCompletion :: (a :>> b) -> (a :>> b)
 nextCompletion s = fromMaybe  (s & leftmost) (s & rightward)
 
 data SKKCommand = Incoming Char
+                | Backspace
+                | Convert
                 | ToggleHankaku
+                | Undo
+                | Finish
+                | Complete
+                | ToggleKana
+                | Refresh
                   deriving (Read, Show, Eq, Ord)
 
-skkConv :: KanaTable -> ConvMode -> Dictionary
-        -> Pager -> CandidateSelector
-        -> SKKState -> SKKCommand -> (SKKState, [SKKResult])
-skkConv _ Ascii _ _ _ s ToggleHankaku = (s, [Idle []])
-skkConv _ _     _ _ _ s ToggleHankaku
-  | s ^. converting = runSW s $ do
-    mbuf <- use convBuf
+data SKKEnv = SKKEnv { table_  :: KanaTable
+                     , kana_   :: ConvMode
+                     , skkDic_ :: Dictionary
+                     } deriving (Show, Eq, Typeable)
+
+table :: Given SKKEnv => KanaTable
+table = table_ given
+
+kana :: Given SKKEnv => ConvMode
+kana = kana_ given
+
+skkDic :: Given SKKEnv => Dictionary
+skkDic = skkDic_ given
+
+skkConv :: KanaTable -> ConvMode
+        -> Dictionary
+        -> SKKCommand -> SKKState -> (SKKState, [SKKResult])
+skkConv tbl mode dict cmd s =
+  give (SKKEnv tbl mode dict) $ runSW s $ skkConv0 cmd
+
+type Machine = Effect (Writer [SKKResult] :+ State SKKState :+ Nil)
+
+skkConv0 :: Given SKKEnv => SKKCommand -> Machine ()
+skkConv0 cmd | Ascii <- kana =
+  case cmd of
+    Incoming c    -> emit $ Idle [Converted $ T.singleton c]
+    _             -> emit $ Idle []
+
+skkConv0 Undo = do
+  isConv <- use converting
+  when isConv $ do
+    maybe (put newSKKState) (const $ okuriState .= Nothing) =<< use okuriState
+
+skkConv0 ToggleHankaku = do
+  isConv <- use converting
+  mbuf <- use convBuf
+  when isConv $ do
     case mbuf of
       Just buf -> do
         lo <- use $ kanaState._Just.tempResult
-        put newSKKState
-        emit $ Completed $ toHankaku $ buf <> fromMaybe "" lo
+        finish $ toHankaku $ buf <> fromMaybe "" lo
       Nothing -> emit $ Idle []
-skkConv _ _     _ _ _ s ToggleHankaku = (s, [Idle []])
-skkConv _ Ascii _ _ _ s (Incoming c) = (s, [Idle [Converted $ T.singleton c]])
-skkConv table kana dic pager select s0 (Incoming c) = runSW s0 (go (viewS c s0))
-  where
-    showPage page = do
-      mokBuf <- use okuriState
-      emit $ Page page (convKana Hiragana kana . snd <$> mokBuf)
-    notFound body mokuri = do
-      put newSKKState
-      emit $ ConvNotFound body mokuri
-    complete str = do
-      a <- use okuriState
-      put newSKKState
-      emit $ Completed $ convKana Hiragana kana $ str <> maybe "" snd a
-    okuriWith temp = do
-      body  <- use convBuf
-      okBuf <- use okuriBuf
-      emit $ Okuri (convKana Hiragana kana $ fromMaybe "" body) (convKana Hiragana kana $ okBuf <> temp)
-    convertingWith temp = do
-      buf <- use convBuf
-      emit $ Converting $ convKana Hiragana kana $ (fromMaybe "" buf) <> temp
-    go Complete = do
+
+skkConv0 Refresh = put newSKKState
+
+skkConv0 Convert = do
+  conving <- use converting
+  when conving $ do
+    mok <- use okuriState
+    lo <- either fst id <$> toKana Nothing
+    case mok of
+      Nothing -> do -- Convert without Okurigana
+        body <- fromMaybe "" <$> (convBuf <<>= Just lo)
+        let mcss = map (view tango) .
+                   filter (is _Candidate) <$>
+                   lookup (Input body Nothing) skkDic
+        case mcss of
+          Nothing  -> notFound
+          Just css -> convFound css
+      Just (okCh, okBuf0) -> do -- Convert with Okurigana
+        let okBuf = okBuf0 <> lo
+        okuriState ?= (okCh, okBuf)
+        body <- uses convBuf (fromMaybe "")
+        case lookup' (Input body $ Just $ toLower okCh) okBuf skkDic of
+          Just css -> convFound css
+          Nothing -> notFound
+
+skkConv0 Backspace = do
+  isConv <- use converting
+  if isConv
+    then use okuriState >>= \case
+    Just (_, buf) -> do
+      comping <- use kanaing
+      if | comping && not (T.null buf) -> skkConv0 (Incoming '\DEL')
+         | T.null buf -> do
+             okuriState .= Nothing
+             kanaState  .= Nothing
+             convertingWith ""
+         | otherwise -> do
+             okuriState %= fmap (second T.init)
+             okuriWith ""
+    Nothing -> do
+      compCandidates .= Nothing
       buf <- fromMaybe "" <$> use convBuf
-      complete buf
-    go DoCompletion = do
-      trail <- either fst id <$> toKana Nothing
-      kanaState .= Nothing
-      convBuf <>= Just trail
-      mcomps <- use compCandidates
-      case mcomps of
-        Nothing -> do
-          buf <- fromMaybe "" <$> use convBuf
-          unless (T.null buf) $ do
-            let cs = filter (buf `T.isPrefixOf`) $
-                     HM.keys $ dic ^. okuriNasiDic
-            unless (null cs)$ do
-              compCandidates ?= (zipper cs & fromWithin traverse)
-              convBuf ?= head cs
-              convertingWith ""
-        Just cur -> do
-          cur' <- compCandidates <?= (cur & nextCompletion)
-          convBuf ?= cur' ^. focus
+      isKana <- uses kanaState (maybe False isConverting)
+      if | isKana -> toKana (Just '\DEL') >>= \case
+             Right comp -> do
+               convBuf <>= Just comp
+               convertingWith ""
+             Left (comp, temp) -> do
+               convBuf <>= Just comp
+               convertingWith temp
+         | T.null buf -> do
+             convBuf .= Nothing
+             put newSKKState
+             emit $ Idle [NoHit]
+         | otherwise -> do
+             convBuf %= fmap T.init
+             convertingWith ""
+    else emit $ Idle [NoHit]
+
+skkConv0 Finish =
+  maybe (skkConv0 $ Incoming '\n') finish =<< use convBuf
+
+skkConv0  Complete = do
+  trail <- trailingText
+  kanaState .= Nothing
+  convBuf <>= Just trail
+  mcomps <- use compCandidates
+  case mcomps of
+    Nothing -> do
+      buf <- fromMaybe "" <$> use convBuf
+      unless (T.null buf) $ do
+        let cs = filter (buf `T.isPrefixOf`) $
+                 HM.keys $ skkDic ^. okuriNasiDic
+        unless (null cs)$ do
+          compCandidates ?= (zipper cs & fromWithin traverse)
+          convBuf ?= head cs
           convertingWith ""
+    Just cur -> do
+      cur' <- compCandidates <?= (cur & nextCompletion)
+      convBuf ?= cur' ^. focus
+      convertingWith ""
+
+skkConv0 ToggleKana = do
+  lo <- trailingText
+  buf <- fromMaybe "" <$> use convBuf
+  finish $ toggleKana kana (buf <> lo)
+
+skkConv0 (Incoming c) = go . viewS c  =<< get
+  where
     go StartConvert = do
       mans <- toKana Nothing
       case mans of
@@ -343,10 +393,6 @@ skkConv table kana dic pager select s0 (Incoming c) = runSW s0 (go (viewS c s0))
           okuriState ?= (T.head lo, "")
           return ()
         _ -> return ()
-    go ToggleKana = do
-      lo <- either fst id <$> toKana Nothing
-      buf <- fromMaybe "" <$> use convBuf
-      complete $ toggleKana kana (buf <> lo)
     go SlashInput = do
       convBuf <>= Just (T.singleton c)
       convertingWith ""
@@ -355,63 +401,6 @@ skkConv table kana dic pager select s0 (Incoming c) = runSW s0 (go (viewS c s0))
       convBuf ?= ""
       convertingWith ""
     go (AndThen p q) = go p >> go q
-    go Noop = emit $ Idle [NoHit]
-    go DeleteConvert = do
-      compCandidates .= Nothing
-      buf <- fromMaybe "" <$> use convBuf
-      isKana <- uses kanaState (maybe False isConverting)
-      if isKana
-        then toKana (Just '\DEL') >>= \case
-          Right comp -> do
-            convBuf <>= Just comp
-            convertingWith ""
-          Left (comp, temp) -> do
-            convBuf <>= Just comp
-            convertingWith temp
-        else if T.null buf
-             then do
-               convBuf .= Nothing
-               put newSKKState
-               emit $ Idle [NoHit]
-             else do
-               convBuf %= fmap T.init
-               convertingWith ""
-    go DeleteOkuri = do
-      buf <- use okuriBuf
-      kdic <- use kanaState
-      case kdic of
-        Just _
-          | not (T.null buf) -> go OkuriInput
-        _ ->
-          if T.null buf
-            then do
-              okuriState .= Nothing
-              kanaState  .= Nothing
-              convertingWith ""
-            else do
-              okuriState %= fmap (second T.init)
-              okuriWith ""
-    go (NextPage curPage) =
-      case curPage & rightward of
-        Nothing -> showPage $ curPage ^. focus
-        Just pg -> do
-           selection ?= pg
-           showPage $ pg ^. focus
-    go (PrevPage curPage) =
-      case curPage & leftward of
-        Nothing -> do
-          selection .= Nothing
-          okuriState .= Nothing
-          convertingWith ""
-        Just pg -> do
-          selection ?= pg
-          showPage $ pg ^. focus
-    go (TakeFirst curPage) = do
-      complete $ curPage ^. focus._head
-    go (Select n curPage) =
-      case select n $ curPage ^. focus of
-        Nothing -> showPage $ curPage ^. focus
-        Just t  -> complete t
     go ConvertInput = do
       compCandidates .= Nothing
       rslt <- toKana $ Just (toLower c)
@@ -422,33 +411,7 @@ skkConv table kana dic pager select s0 (Incoming c) = runSW s0 (go (viewS c s0))
         Left (comp, temp) -> do
           convBuf <>= Just comp
           convertingWith temp
-    go (Convert body0 mok) = do
-      elo <- toKana Nothing
-      let lo = either fst id elo
-      case mok of
-        Nothing ->
-          let body = body0 <> lo
-              mcss = pager . map (view tango) .
-                     filter (is _Candidate) <$>
-                     lookup (Input body Nothing) dic
-          in case mcss of
-            Nothing -> notFound body Nothing
-            Just css -> do
-              selection ?= (zipper css & fromWithin traverse)
-              showPage $ head css
-        Just (okCh, okBuf0) ->
-          let body = body0
-              okBuf = okBuf0 <> lo
-          in case pager <$> lookup' (Input body $ Just $ toLower okCh) okBuf dic of
-            Just css -> do
-              okuriState ?= (okCh, okBuf)
-              selection  ?= (zipper css & fromWithin traverse)
-              showPage $ head css
-            Nothing -> do
-              okuriState ?= (okCh, okBuf)
-              notFound body (Just (okCh, okBuf))
     go OkuriInput = do
-      body <- use $ convBuf._Just
       okr  <- use okuriState
       rslt <- toKana $ Just $ toLower c
       case rslt of
@@ -458,34 +421,68 @@ skkConv table kana dic pager select s0 (Incoming c) = runSW s0 (go (viewS c s0))
           okuriWith temp
         Right str -> do
           let ok = maybe (c, str) (second (<> str)) okr
-          go $ Convert body $ Just ok
+          okuriState ?= ok
+          skkConv0 Convert
     go NormalInput = do
       ks0 <- fromMaybe (newKanaState table) <$> use kanaState
       let (ks', rs) = romanConv table kana ks0 (Just c)
       kanaState ?= ks'
       emit $ Idle rs
-    toKana mc = do
-      ks <- fromMaybe (newKanaState table) <$> use kanaState
-      let (ks', rs) = romanConv table Hiragana ks mc
-          (prgs, cvd) = partition (is _InProgress) rs
-          finished = T.concat $ map toT cvd
-          toT NoHit          = T.singleton c
-          toT Reset          = ""
-          toT (InProgress t) = T.decodeUtf8 t
-          toT (Converted t)  = t
-      if isConverting ks'
-        then do
-          kanaState ?= ks'
-          return $ Left (finished, T.concat $ map toT prgs)
-        else do
-          kanaState .= Nothing
-          return $ Right finished
+
+trailingText :: Given SKKEnv => Machine T.Text
+trailingText = either fst id <$> toKana Nothing
+
+finish :: Given SKKEnv => T.Text -> Machine ()
+finish str = do
+  a <- use okuriState
+  put newSKKState
+  emit $ Finished $ convKana Hiragana kana $ str <> maybe "" snd a
+
+convertingWith :: Given SKKEnv => T.Text -> Machine ()
+convertingWith temp = do
+  buf <- use convBuf
+  emit $ Converting $ convKana Hiragana kana $ (fromMaybe "" buf) <> temp
+
+notFound :: Machine ()
+notFound  = do
+  body <- uses convBuf (fromMaybe "")
+  mokuri <- use okuriState
+  okuriState .= Nothing
+  emit $ ConvNotFound body mokuri
+
+convFound :: Given SKKEnv => [T.Text] -> Machine ()
+convFound css = do
+  mok  <- use okuriState
+  body <- uses convBuf (fromMaybe "")
+  okuriState .= Nothing
+  emit $ ConvFound body (second (convKana Hiragana kana) <$> mok) css
+
+okuriWith :: Given SKKEnv => T.Text -> Machine ()
+okuriWith temp = do
+  body  <- use convBuf
+  okBuf <- use okuriBuf
+  emit $ Okuri (convKana Hiragana kana $ fromMaybe "" body)
+               (convKana Hiragana kana $ okBuf <> temp)
+
+toKana :: Given SKKEnv => Maybe Char ->  Machine (Either (T.Text, T.Text) T.Text)
+toKana mc = do
+  ks <- fromMaybe (newKanaState table) <$> use kanaState
+  let (ks', rs) = romanConv table Hiragana ks mc
+      (prgs, cvd) = partition (is _InProgress) rs
+      finished = T.concat $ map toT cvd
+      toT NoHit          = maybe "" T.singleton mc
+      toT (InProgress t) = T.decodeUtf8 t
+      toT (Converted t)  = t
+  if isConverting ks'
+    then do
+      kanaState ?= ks'
+      return $ Left (finished, T.concat $ map toT prgs)
+    else do
+      kanaState .= Nothing
+      return $ Right finished
 
 defSKKConvE :: Event SKKCommand -> SignalGen (Event [SKKResult])
-defSKKConvE = skkConvE defKanaTable Hiragana sDictionary pager sel
-  where
-    pager = splitAt 4 >>> map pure *** slice 7 >>> uncurry (++)
-    sel c cs = (cs ^?) . ix =<< elemIndex c "asdfjkl"
+defSKKConvE = skkConvE defKanaTable Hiragana (pure sDictionary)
 
 defPager :: Pager
 defPager = splitAt 4 >>> map pure *** slice 7 >>> uncurry (++)
@@ -499,13 +496,13 @@ slice n = unfoldr phi
     phi [] = Nothing
     phi ys = Just $ splitAt n ys
 
-skkConvE :: KanaTable -> ConvMode -> Dictionary
-         -> Pager -> CandidateSelector
+skkConvE :: KanaTable -> ConvMode
+         -> Behavior Dictionary
          -> Event SKKCommand -> SignalGen (Event [SKKResult])
-skkConvE table mode dic pag sel input
-  = mapAccumE' (skkConv table mode dic pag sel) newSKKState input
+skkConvE table mode dic input
+  = mapAccumE newSKKState (skkConv table mode <$> dic <@> input)
 
-newInput :: (Event Char -> SignalGen (Event a)) -> IO (Char -> IO a)
+newInput :: (Event b -> SignalGen (Event a)) -> IO (b -> IO a)
 newInput toEv = do
   eev <- newExternalEvent
   step <- start $ do
@@ -537,4 +534,3 @@ formatEntry (KanaEntry a b c md) =
 
 formatKanaTable :: KanaTable -> T.Text
 formatKanaTable = T.unlines . map formatPair . Trie.toList . view kanaDic
-

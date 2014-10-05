@@ -21,31 +21,34 @@ library
   other-modules:       Text.InputMethod.SKK.Misc
   -- other-extensions:    
   build-depends: base                       <4.8
-             , async
-             , attoparsec
-             , bytestring
-             , bytestring-trie
-             , hashable
-             , lens
-             , network
-             , ordrea
-             , resourcet
-             , template-haskell
-             , text >=1.1 && <1.2
-             , transformers
-             , unordered-containers
-             , effin
-             , zippers >= 0.2, mtl
+               , async
+               , attoparsec
+               , bytestring
+               , bytestring-trie
+               , hashable
+               , lens
+               , network
+               , ordrea
+               , resourcet
+               , template-haskell
+               , text >=1.1 && <1.2
+               , transformers
+               , unordered-containers
+               , effin
+               , zippers >= 0.2
+               , mtl
+               , reflection
   hs-source-dirs:      src, cocoa
   default-language:    Haskell2010
 
 Executable simpleserv
-  build-depends:                      filepath
-             , ordrea
-             , skk
-             , stm
-             , text
-             , zippers >= 0.2
+  build-depends: filepath
+               , ordrea
+               , skk
+               , stm
+               , text
+               , zippers >= 0.2
+               , reflection
   Main-is:             simplesrv.hs
   hs-source-dirs:      examples
   default-language:    Haskell2010
@@ -76,7 +79,8 @@ Executable hSKK
                        template-haskell,
                        containers,
                        zippers,
-                       effin
+                       effin,
+                       reflection
   Main-is:             Main.hs
   other-modules:       App,
                        AppDelegate,

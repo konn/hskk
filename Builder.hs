@@ -67,7 +67,7 @@ buildWith AppSetting {..} = do
 
   phony "clean" $ do
     putNormal "cleaning..."
-    -- removeFilesAfter "" ["//*_objc.h","//*_objc.m","//*_stub.h"]
+    removeFilesAfter "" ["//*_objc.h","//*_objc.m","//*_stub.h"]
     remove <- doesDirectoryExist build
     when remove $
       removeFilesAfter build ["//*"]

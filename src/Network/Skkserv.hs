@@ -27,7 +27,7 @@ import           System.IO              (hFlush, hIsClosed, hSetBuffering)
 import           System.IO              (hSetEncoding, mkTextEncoding)
 import           Text.InputMethod.SKK
 
-data Request = Convert T.Text
+data Request = GetCandidate T.Text
              | GetVersion
              | GetServerInfo
              | LookPrefix T.Text
@@ -49,7 +49,7 @@ skkserv :: Behavior Dictionary -> Skkserv
 skkserv bDic req = return $ applyBE (recv <$> bDic) req
   where
     recv _ Disconnect  = Nothing
-    recv dic (Convert t)
+    recv dic (GetCandidate t)
       = Just $ maybe (NotFound t) (Candidates . map formatCandidate) $
         lookup (toInput t) dic
     recv dic (LookPrefix t)
@@ -98,13 +98,13 @@ handleE :: Handle -> Acquire (ExternalEvent T.Text)
 handleE h = fst <$> mkAcquire (handleE0 h) snd
 
 request :: Parser Request
-request = Disconnect          <$  string "0"
-      <|> Convert . T.pack    <$  char '1'
-                              <*> manyTill (satisfy (/= ' ')) (char ' ')
-      <|> GetVersion          <$  string "2"
-      <|> GetServerInfo       <$  string "3"
-      <|> LookPrefix . T.pack <$  char '4'
-                              <*> manyTill (satisfy (/= ' ')) (char ' ')
+request = Disconnect            <$  string "0"
+      <|> GetCandidate . T.pack <$  char '1'
+                                <*> manyTill (satisfy (/= ' ')) (char ' ')
+      <|> GetVersion            <$  string "2"
+      <|> GetServerInfo         <$  string "3"
+      <|> LookPrefix . T.pack   <$  char '4'
+                                <*> manyTill (satisfy (/= ' ')) (char ' ')
 
 data SkkservSettings
   = SkkservSettings { port    :: Int

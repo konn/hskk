@@ -3,10 +3,9 @@
 {-# LANGUAGE QuasiQuotes, TemplateHaskell, TypeFamilies                  #-}
 module KeyFlags.Macros where
 import           Control.Arrow       ((***), (>>>))
-import           Control.Lens        (_Left)
-import           Control.Lens.Extras (is)
 import           Data.Bits           (Bits (..), (.&.))
 import           Data.Char           (isAlpha, toLower)
+import           Data.Char           (isDigit)
 import           Data.Data           (Data, Typeable)
 import           Data.Function       (on)
 import           Data.List           (nubBy)
@@ -15,11 +14,11 @@ import qualified Data.Text           as T
 import           Language.Haskell.TH (ConQ, DecsQ, ExpQ, MatchQ, Strict (..))
 import           Language.Haskell.TH (Type (ConT), TypeQ, appE, charL, clause)
 import           Language.Haskell.TH (conE, conP, conT, dataD, funD, integerL)
-import           Language.Haskell.TH (lamCaseE, litE, litP, match, mkName, Lit(..))
+import           Language.Haskell.TH (Lit (..), lamCaseE, litE, litP, match,
+                                      mkName)
 import           Language.Haskell.TH (normalB, normalC, normalC, sigD, wildP)
+import           Language.Haskell.TH (listE)
 import           Numeric             (readHex)
-import Language.Haskell.TH (listE)
-import Data.Char (isDigit)
 
 type CodeTable = [(Either (T.Text, Lit) T.Text, Integer)]
 

@@ -3,8 +3,10 @@
 {-# LANGUAGE MultiParamTypeClasses, PolyKinds, QuasiQuotes, RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables, StandaloneDeriving, TemplateHaskell  #-}
 {-# LANGUAGE TypeFamilies, TypeOperators                               #-}
-module Messaging.Core ((:>)(..), cast, Object(..), withTypeableSymbol,
+module Messaging.Core ((:>), cast, Object(..), withTypeableSymbol,
                        Selector(..), send, (#), (#.), (===), unsafeDownCast) where
+import Control.Monad.IO.Class (MonadIO)
+import Control.Monad.IO.Class (liftIO)
 import Data.Typeable.Internal (Proxy (..), Typeable (..), mkTyCon3, mkTyConApp)
 import Foreign.ForeignPtr     (ForeignPtr)
 import GHC.Base               (Proxy#)
@@ -48,12 +50,12 @@ send :: (a :> b, Selector a msg) => Object b -> Message msg -> Returns msg
 send = send' . cast
 
 infixl 4 #
-(#) :: (a :> b, Selector a msg) => Object b -> Message msg -> Returns msg
-(#) = send
+(#) :: (a :> b, Selector a msg, Returns msg ~ IO c, MonadIO m) => Object b -> Message msg -> m c
+obj # f = liftIO $ send obj f
 
 infixl 4 #.
-(#.) :: (a :> b, Selector a msg, Returns msg ~ IO c) => IO (Object b) -> Message msg -> IO c
-recv #. sel = recv >>= flip send sel
+(#.) :: (a :> b, Selector a msg, Returns msg ~ IO c, MonadIO m) => IO (Object b) -> Message msg -> m c
+recv #. sel = liftIO $ recv >>= flip send sel
 
 infix 4 ===
 (===) :: Object t -> Object t1 -> Bool
