@@ -241,6 +241,7 @@ data SKKCommand = Incoming Char
                 | Finish
                 | Complete
                 | ToggleKana
+                | CurrentState
                 | Refresh
                   deriving (Read, Show, Eq, Ord)
 
@@ -271,6 +272,18 @@ skkConv0 cmd | Ascii <- kana =
   case cmd of
     Incoming c    -> emit $ Idle [Converted $ T.singleton c]
     _             -> emit $ Idle []
+
+skkConv0 CurrentState = use convBuf >>= \case
+  Nothing  -> use kanaState >>= \case
+    Nothing -> emit $ Idle []
+    Just ks -> emit $ Idle [InProgress (ks ^. kanaBuf)]
+  Just buf -> do
+    sl <- use slashed
+    mok <- use okuriState
+    kn <- uses kanaState $ maybe "" (T.decodeUtf8 . view kanaBuf)
+    if | sl -> emit $ Converting buf
+       | Just (_, ok) <- mok -> emit $ Okuri buf (ok <> kn)
+       | otherwise -> emit $ Converting $ buf <> kn
 
 skkConv0 Undo = do
   isConv <- use converting

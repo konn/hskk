@@ -38,6 +38,7 @@ library
                , zippers >= 0.2
                , mtl
                , reflection
+               , monad-loops
   hs-source-dirs:      src, cocoa
   default-language:    Haskell2010
 
@@ -80,7 +81,8 @@ Executable hSKK
                        containers,
                        zippers,
                        effin,
-                       reflection
+                       reflection,
+                       monad-loops
   Main-is:             Main.hs
   other-modules:       App,
                        AppDelegate,
