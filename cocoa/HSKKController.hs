@@ -22,6 +22,7 @@ import           Control.Lens           ((&), (.=), (.~), (<>=))
 import           Control.Lens           ((^.), (^?), (^?!), _Just, _last)
 import           Control.Lens           ((%=), (<<>=))
 import           Control.Lens           ((<&>))
+import           Control.Lens           (isn't)
 import           Control.Lens.Extras    (is)
 import           Control.Monad          (forM, liftM, (<=<))
 import           Control.Monad.IO.Class (MonadIO, liftIO)
@@ -312,8 +313,8 @@ inputText sess0 cl input keyCode flags =
                  client # selectInputMode (modeToString Hiragana)
                  updateSession $ convMode .~ Hiragana
                  return True
-               Ascii    -> pushKey [Incoming 'q']
-           | null modifs && input == "q" -> pushKey [ToggleKana]
+               Ascii    -> pushKey $ Incoming 'q'
+           | null modifs && input == "q" -> pushKey ToggleKana
            | null modifs && idle && input == "l" ->
                case mode of
                  HankakuKatakana -> do
@@ -328,10 +329,10 @@ inputText sess0 cl input keyCode flags =
                    client # selectInputMode (modeToString Ascii)
                    updateSession $ convMode .~ Ascii
                    return True
-                 Ascii    -> pushKey [Incoming 'l']
+                 Ascii    -> pushKey $ Incoming 'l'
            | not (isControl $ head input) && all isAlphabeticModifier modifs &&
                        (key & is (_Just . _Char)) -> do
-               pushKey $ map Incoming input
+               pushKey $ Incoming $ head input
            | modifs == [Control] && key == Just (Char 'g') ->
                case cst ^? continue of
                  Nothing -> do
@@ -345,7 +346,7 @@ inputText sess0 cl input keyCode flags =
                  | Registering _ _ _ _ _ _ _ <- cst, idle -> do
                    registerBuf %= initT
                    displayCurrentState
-                 | otherwise -> pushKey [Backspace]
+                 | otherwise -> pushKey Backspace
                Just (isNewline -> True) ->
                  if (cst & is _Registering) && idle
                  then do
@@ -354,31 +355,34 @@ inputText sess0 cl input keyCode flags =
                    if T.null buf
                    then cont Nothing
                    else cont $ Just buf
-                 else pushKey [Finish]
-               Just Tab    -> pushKey [Complete]
+                 else pushKey Finish
+               Just Tab    -> pushKey Complete
                Just Space | idle -> if cst & is _Registering
                                     then relay [Normal " "]
-                                    else pushKey [Incoming ' ']
-                          | otherwise -> pushKey [Convert]
+                                    else pushKey $ Incoming ' '
+                          | otherwise -> pushKey Convert
                Just (Char 'q') | all (compatible Control) modifs && not (null modifs) ->
                  if idle && mode /= Ascii
                  then client # selectInputMode (modeToString HankakuKatakana) >> return True
-                 else pushKey [ToggleHankaku]
+                 else pushKey ToggleHankaku
                Just (JIS 'q') | all (compatible Control) modifs && not (null modifs) ->
                  if idle && mode /= Ascii
                  then client # selectInputMode (modeToString HankakuKatakana) >> return True
-                 else pushKey [ToggleHankaku]
+                 else pushKey ToggleHankaku
                Just JisEisuu -> return True
                Just JisKana  -> return True
                Just (Char c)
                  | all (`elem` [Alternate, Shift]) modifs ->
                    let c' = if shifted then toUpper c else c
-                   in  pushKey [Incoming c']
+                   in  pushKey $ Incoming c'
                Just (JIS c)
                  | all (`elem` [Alternate, Shift]) modifs ->
                    let c' = if shifted then toUpper c else c
-                   in pushKey [Incoming c']
-               _ -> return False
+                   in pushKey $ Incoming c'
+               _ | all isAlphabeticModifier modifs && (cst & is _Registering) -> do
+                     nsLog $ "relaying input directly to the registerer " ++ input
+                     pushKey $ Incoming $ head input
+                 | otherwise -> resetClient >> return False
 
 errorLogger :: SomeException -> IO Bool
 errorLogger (SomeException exc) = do
@@ -444,7 +448,7 @@ doSelection ch key modifs = do
          finishSelection $ Just t
      | [a] <- cur, all isAlphabeticModifier modifs -> do
          _ <- finishSelection $ Just a
-         pushKey [Incoming ch]
+         pushKey $ Incoming ch
      | otherwise -> return True
 
 displayMarkedText :: (MonadIO m, Given Environment) => T.Text -> m ()
@@ -479,7 +483,7 @@ isNewline Return = True
 isNewline Enter  = True
 isNewline _      = False
 
-pushKey :: Given Environment => [SKKCommand] -> ClientMachine Bool
+pushKey :: Given Environment => SKKCommand -> ClientMachine Bool
 pushKey input = do
   nogo <- gets $ is _Selecting
   if nogo
@@ -487,11 +491,12 @@ pushKey input = do
     else do
     push <- (^?! pushCmd) <$> get
     idled <- maybe (return True) (liftIO . readIORef) =<< gets (^? idling)
-    ans <- concat <$> mapM (liftIO . push) input
-    let accepted = all (noneOf (_Idle . traverse) (is _NoHit)) ans
-                   || Backspace `elem` input && not idled
-    ((), buf) <- runWriter $ mapM_ extractTxt ans
-    nsLog $ "key result: " ++ show (ans, buf)
+    ans <- liftIO $ push input
+    let accepted = (input & is _Incoming)
+                   || all (noneOf (_Idle.traverse) (is _NoHit)) ans
+                   || Backspace == input && not idled
+    ((), buf) <- runWriter $ mapM_ (extractTxt $ input ^? _Incoming) ans
+    nsLog $ "key result: " ++ show (input, ans, buf)
     if | Just (ConvNotFound mid mok) <- find (is _ConvNotFound) ans -> do
           startRegistration mid mok
        | Just (ConvFound body mokuri cands) <- find (is _ConvFound) ans -> do
@@ -519,7 +524,7 @@ displayCurrentState = get >>= \case
     return True
   Composing  cmd _ _ -> do
     anss <- lift $ cmd CurrentState
-    ((), buf) <- runWriter $ mapM_ extractTxt anss
+    ((), buf) <- runWriter $ mapM_ (extractTxt Nothing) anss
     relay buf
 
 sendCmd :: (EffectLift IO l, EffectState ClientState l)
@@ -598,31 +603,28 @@ prettyOkuri :: T.Text -> Maybe T.Text -> T.Text
 prettyOkuri t Nothing = t
 prettyOkuri t (Just c) = t <> "*" <> c
 
-extractTxt :: (EffectWriter [MarkedText] l) => SKKResult -> Effect l ()
-extractTxt (Idle eds) = mapM_ plainExtractTxt eds
-extractTxt (Finished t) = do
-  tell [Normal t]
-extractTxt (Okuri body o) = do
-  let msg = "▽" <> body <> "*" <> o
-  tell [Marked msg]
-extractTxt (Converting str) = do
-  let ans = "▽" <> str
-  tell [Marked ans]
-extractTxt _ = return ()
+extractTxt :: (EffectWriter [MarkedText] l) => Maybe Char -> SKKResult -> Effect l ()
+extractTxt mc (Idle eds) = mapM_ (plainExtractTxt mc) eds
+extractTxt _ (Finished t) = tell [Normal t]
+extractTxt _ (Okuri body o) = tell [Marked $ "▽" <> body <> "*" <> o]
+extractTxt _ (Converting str) = tell [Marked $ "▽" <> str]
+extractTxt _ _ = return ()
 
 plainExtractTxt :: (EffectWriter [MarkedText] l)
-                => KanaResult
+                => Maybe Char
+                -> KanaResult
                 -> Effect l ()
-plainExtractTxt (Converted text) = do
-  tell [Normal text]
-plainExtractTxt (InProgress buf) = tell [Marked $ T.decodeUtf8 buf]
-plainExtractTxt NoHit = return ()
+plainExtractTxt _ (Converted text) = tell [Normal text]
+plainExtractTxt _ (InProgress buf) = tell [Marked $ T.decodeUtf8 buf]
+plainExtractTxt (Just c) NoHit = tell [Normal $ T.singleton c]
+plainExtractTxt Nothing NoHit = return ()
+
 
 commit :: Session -> NSObject -> IO ()
 commit sess sndr = do
   _ <- withSession' sess sndr $ do
     sender # setMarkedText "" 0 0
-    a <- pushKey [Finish]
+    a <- pushKey Finish
     resetClient
     return a
   return ()

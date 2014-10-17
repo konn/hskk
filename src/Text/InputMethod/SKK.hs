@@ -17,6 +17,9 @@ module Text.InputMethod.SKK
         -- * misc
         Pager, CandidateSelector, slice,  _Idle,
         _Converting, _Okuri, _ConvFound, _ConvNotFound,
+        _Incoming, _Backspace, _Convert, _ToggleHankaku,
+        _Undo, _Finish, _Complete, _ToggleKana,
+        _CurrentState, _Refresh,
         defCSelector, defPager, isIdling, toggleKana
         ) where
 import Text.InputMethod.SKK.Dictionary
@@ -259,6 +262,7 @@ data SKKEnv = SKKEnv { table_  :: KanaTable
                      , kana_   :: ConvMode
                      , skkDic_ :: Dictionary
                      } deriving (Show, Eq, Typeable)
+makePrisms ''SKKCommand
 
 table :: Given SKKEnv => KanaTable
 table = table_ given
