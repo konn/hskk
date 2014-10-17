@@ -428,6 +428,7 @@ doSelection ch key modifs = do
                             ,"を削除しますか？(yes/no) "]
          displayMarkedText msg
          answer <- suspend $ Inquiry msg
+         displayMarkedText ""
          if answer == Just "yes"
            then do
              let dicR = session ^. skkDic
@@ -462,6 +463,7 @@ continueWith minp = (^? continue) <$> get >>= \case
   Just f -> f minp
   Nothing -> do
     resetClient
+    displayCurrentState
     return True
 
 showPage ::  Maybe (Char, T.Text) -> [T.Text] -> T.Text
@@ -512,8 +514,11 @@ displayCurrentState = get >>= \case
   Selecting _ pg _ mok _ _ -> do
     let msg = showPage mok (pg ^. focus)
     relay [Marked msg]
-  Registering _ _ _ buf mid mok _ -> do
-    let msg = "[単語登録："  <> prettyOkuri mid mok <> "]" <> buf
+  Registering push _ _ buf mid mok _ -> do
+    ans <- lift $ push CurrentState
+    let tmp = T.concat $ map unmark $ snd $ runEffect $ runWriter $
+              mapM (extractTxt Nothing) ans
+        msg = "[単語登録："  <> prettyOkuri mid mok <> "]" <> buf <> tmp
     displayMarkedText msg
     return True
   Composing  cmd _ _ -> do
