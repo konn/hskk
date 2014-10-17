@@ -188,9 +188,10 @@ objc_interface [cunit|
 
 objc_typecheck
 
-updateSession :: Session -> IO ()
-updateSession sess = do
-  let myself = sess ^. self
+updateSession :: Given Environment => (Session -> Session) -> IO ()
+updateSession upd = do
+  let myself = session ^. self
+      sess   = upd session
   $(objc ['sess :> ''Session, 'myself :> ''HSKKController] $
        void [cexp| myself.session = sess |])
 
@@ -199,7 +200,7 @@ changeMode sess str = maybe (return ()) (changeMode' sess) $ lookupMode str
 
 changeMode' :: Session -> ConvMode -> IO ()
 changeMode' sess kana = do
-  updateSession $ sess & convMode .~ kana
+  give (Env sess undefined) $ updateSession $ convMode .~ kana
   return ()
 
 mapAccumEM' :: (s -> a -> IO (s, b)) -> s -> Event a -> SignalGen (Event b)
@@ -255,7 +256,7 @@ handleIter :: (EffectLift IO l,
 handleIter iter = do
   case iter of
     Done (a, cst') -> do
-      liftIO $ updateSession $ session & clientMap %~ M.insert sender cst'
+      liftIO $ updateSession $ clientMap %~ M.insert sender cst'
       put cst'
       return a
     Next cont (Selection body mok cands) -> do
@@ -264,7 +265,7 @@ handleIter iter = do
       let z = (zipper (defPager cands) & fromWithin traverse)
           cst'  = Selecting mode z body mok (handleIter <=< extend . extend . cont)
                             (relayWith cst)
-      liftIO $ updateSession $ session & clientMap %~ M.insert sender cst'
+      liftIO $ updateSession $ clientMap %~ M.insert sender cst'
       return True
     Next cont (Registration body mok) -> do
       let mode = session ^. convMode
@@ -272,11 +273,11 @@ handleIter iter = do
       (push, ref) <- liftIO $ newPusher defKanaTable mode dic
       let cst' = Registering push mode ref "" body mok
                              (handleIter <=< extend . extend .cont)
-      liftIO $ updateSession $ session & clientMap %~ M.insert sender cst'
+      liftIO $ updateSession $ clientMap %~ M.insert sender cst'
       return True
     Next cont (Inquiry msg) -> do
       let cst' = Asking msg "" (handleIter <=< extend . extend .cont)
-      liftIO $ updateSession $ session & clientMap %~ M.insert sender cst'
+      liftIO $ updateSession $ clientMap %~ M.insert sender cst'
       return True
 
 
