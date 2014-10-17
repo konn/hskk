@@ -41,6 +41,7 @@ import           Data.Data             (Data, Typeable)
 import qualified Data.HashMap.Strict   as HM
 import           Data.List             (elemIndex, partition, unfoldr)
 import           Data.Maybe            (fromMaybe, isJust)
+import           Data.Maybe            (listToMaybe)
 import           Data.Monoid           (Monoid (..), (<>))
 import           Data.Reflection       (Given (..), give)
 import qualified Data.Text             as T
@@ -96,20 +97,20 @@ convChar Katakana = kataConv
 convChar HankakuKatakana = hanKataConv
 convChar Ascii = const $ pure
 
-data KanaState = KanaState { _tempResult :: Maybe T.Text
-                           , _kanaBuf    :: BS.ByteString
-                           , _dicts      :: [Trie KanaEntry]
+data KanaState = KanaState { _tempResults :: [T.Text]
+                           , _kanaBuf     :: BS.ByteString
+                           , _dicts       :: [Trie KanaEntry]
                            } deriving (Show, Eq, Typeable)
 makeLenses ''KanaState
 
 newKanaState :: KanaTable -> KanaState
-newKanaState table = KanaState { _tempResult = Nothing
+newKanaState table = KanaState { _tempResults = []
                                , _kanaBuf = ""
                                , _dicts   = [table ^. kanaDic]
                                }
 
 isConverting :: KanaState -> Bool
-isConverting a = isJust (a ^. tempResult) || not (BS.null $ a ^. kanaBuf)
+isConverting a = not (null  $ a ^. tempResults) || not (BS.null $ a ^. kanaBuf)
 
 mapAccumE' :: (s -> a -> (s, b)) -> s -> Event a -> SignalGen (Event b)
 mapAccumE' fun s0 e = mapAccumE s0 (flip fun <$> e)
@@ -133,7 +134,11 @@ romanConv dic mode s = runSW s . go
     inProgress t = emit . InProgress =<< kanaBuf <<>= t
     reset = put $ newKanaState dic
     converted t = emit (Converted t) >> reset
-    go Nothing = maybe (return ()) converted =<< use tempResult
+    go Nothing = do
+      tmps <- use tempResults
+      if null tmps
+        then return ()
+        else converted $ head tmps
     go (Just '\DEL') = do
       mt <- use kanaBuf
       if BS.null mt
@@ -141,12 +146,13 @@ romanConv dic mode s = runSW s . go
         else do
           buf <- kanaBuf <%= BS.init
           dicts %= tail
+          tempResults %= tailL
           emit $ InProgress buf
     go (Just c) = do
       let inp = BS.singleton c
       (mans, ps') <- uses dicts (lookupBy (,) inp . head)
-      pre <- use tempResult
-      let emitPre = maybe (return ()) converted pre
+      pre <- use tempResults
+      let emitPre = if null pre then return () else converted $ head pre
       case mans of
         Just a -> do
           let out   = a ^. convChar mode
@@ -157,7 +163,7 @@ romanConv dic mode s = runSW s . go
               converted out
               maybe (return ()) (go . Just) mnext
             else do
-              tempResult ?= out
+              tempResults %= (out :)
               dicts %= app ps'
               inProgress inp
         Nothing | Trie.null ps' -> do
@@ -167,8 +173,12 @@ romanConv dic mode s = runSW s . go
                       else go (Just c)
                 | otherwise     -> do
                     dicts      %= (ps' :)
-                    tempResult .= Nothing
+                    tempResults %= tailL
                     inProgress inp
+
+tailL :: [t] -> [t]
+tailL [] = []
+tailL (_:xs) = xs
 
 prefixes :: BS.ByteString -> Trie a -> Trie a
 prefixes = lookupBy ((snd .) . (,))
@@ -296,8 +306,8 @@ skkConv0 ToggleHankaku = do
   when isConv $ do
     case mbuf of
       Just buf -> do
-        lo <- use $ kanaState._Just.tempResult
-        finish $ toHankaku $ buf <> fromMaybe "" lo
+        lo <- use $ kanaState._Just.tempResults
+        finish $ toHankaku $ buf <> fromMaybe "" (listToMaybe lo)
       Nothing -> emit $ Idle []
 
 skkConv0 Refresh = put newSKKState
@@ -356,7 +366,15 @@ skkConv0 Backspace = do
          | otherwise -> do
              convBuf %= fmap T.init
              convertingWith ""
-    else emit $ Idle [NoHit]
+    else do
+      isKana <- uses kanaState (maybe False isConverting)
+      if isKana
+        then do
+          ks0 <- fromMaybe (newKanaState table) <$> use kanaState
+          let (ks', rs) = romanConv table kana ks0 (Just '\DEL')
+          kanaState ?= ks'
+          emit $ Idle rs
+        else emit $ Idle [NoHit]
 
 skkConv0 Finish =
   maybe (skkConv0 $ Incoming '\n') finish =<< use convBuf
@@ -416,7 +434,7 @@ skkConv0 (Incoming c) = go . viewS c  =<< get
     go (AndThen p q) = go p >> go q
     go ConvertInput = do
       compCandidates .= Nothing
-      rslt <- toKana $ Just (toLower c)
+      rslt <- toKana (Just (toLower c))
       case rslt of
         Right ans -> do
           convBuf <>= Just ans
