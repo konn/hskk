@@ -4,7 +4,7 @@ module Text.InputMethod.SKK.Dictionary
        (Dictionary(..), Input(..), Candidate(..),
         gokan, okurigana, emptyDic, lookup, lookup',
         tango, chushaku, okuri, subCands, dictionary,
-        sDictionary, okuriAriDic, okuriNasiDic, insert,
+        sDictionary, okuriAriDic, okuriNasiDic, insert, unregister,
         formatDictionary, _Candidate, _OkuriSub, formatCandidate) where
 import           Control.Applicative  ((*>), (<$), (<$>), (<*), (<*>), (<|>))
 import           Control.Lens
@@ -20,6 +20,7 @@ import           Data.List            (partition)
 import           Data.List            (find)
 import           Data.List            (nub)
 import           Data.Maybe           (fromMaybe)
+import           Data.Maybe           (mapMaybe)
 import           Data.Monoid          ((<>))
 import           Data.Ord             (comparing)
 import qualified Data.Text            as T
@@ -80,6 +81,26 @@ lookup' i@(Input _ Just{}) t d =
           targs = fromMaybe [] mtargs
           ans = nub $ map (view tango) $ targs ++ ords
       in if null ans then Nothing else Just ans
+
+unregister :: Input -> T.Text -> Dictionary -> Dictionary
+unregister (Input g Nothing) txt =
+  okuriNasiDic . at g %~ maybe Nothing (ensureNonEmpty . mapMaybe (annihilate txt))
+unregister (Input g (Just ok)) txt =
+  okuriAriDic . ix (g, ok) %~ mapMaybe (annihilate txt)
+
+ensureNonEmpty :: [t] -> Maybe [t]
+ensureNonEmpty [] = Nothing
+ensureNonEmpty xs = Just xs
+
+annihilate :: T.Text -> Candidate -> Maybe Candidate
+annihilate txt c@(Candidate t _)
+  | txt == t = Nothing
+  | otherwise = Just c
+annihilate txt (OkuriSub ok cands) =
+  let subs = mapMaybe (annihilate txt) cands
+  in if null subs
+     then Nothing
+     else Just $ OkuriSub ok subs
 
 insert :: Input -> Candidate -> Dictionary -> Dictionary
 insert (Input k Nothing) v d =

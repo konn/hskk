@@ -12,13 +12,15 @@ import Messaging
 
 import Text.InputMethod.SKK
 
-import           Control.Applicative    ((<$>), (<*))
+import           Control.Applicative    ((<$>))
+import           Control.Arrow          (first)
 import           Control.Effect
 import           Control.Exception      (SomeException (..), handle)
 import           Control.Lens           (makeLenses, makePrisms, noneOf)
-import           Control.Lens           (to, traverse, use, (%~))
+import           Control.Lens           (to, traverse, use, (%~), _head)
 import           Control.Lens           ((&), (.=), (.~), (<%=), (<>=))
 import           Control.Lens           ((^.), (^?), (^?!), _Just, _last)
+import           Control.Lens           ((<<>=))
 import           Control.Lens.Extras    (is)
 import           Control.Monad          (forM, liftM, (<=<))
 import           Control.Monad.IO.Class (MonadIO, liftIO)
@@ -92,6 +94,7 @@ data Environment = Env { _currentSession :: Session
 
 data Waiting = Registration T.Text (Maybe T.Text)
              | Selection T.Text (Maybe (Char, T.Text)) [T.Text]
+             | Inquiry T.Text
                deriving (Read, Show, Eq, Ord)
 
 type Continuation = Maybe T.Text -> ClientMachine Bool
@@ -133,6 +136,10 @@ data ClientState = Composing { _pushCmd    :: SKKCommand -> IO [SKKResult]
                                , _registerOkuri :: Maybe T.Text
                                , _continue      :: Continuation
                                }
+                 | Asking { _askMessage :: T.Text
+                          , _askBuf     :: T.Text
+                          , _continue   :: Continuation
+                          }
                  deriving (Typeable)
 
 makeLenses ''Environment
@@ -156,6 +163,9 @@ formatMarkedText (Normal txt)
 instance Show ClientState where
   showsPrec d (Composing _ mode _) =
     showParen (d > 10) $ showString "Composing " . showsPrec 11 mode
+  showsPrec d (Asking msg buf _) =
+    showParen (d > 10) $ showString "Asking " . showsPrec 11 msg .
+    showChar ' ' . showsPrec 11 buf
   showsPrec d (Registering _ mode _ buf gok oku _) =
     showParen (d > 10) $
     showString "Registering " . showsPrec 11 mode . showChar ' ' .
@@ -235,8 +245,7 @@ withSession' :: Session
 withSession' sess0 sndr act = runLift $ give (Env sess0 sndr) $ do
   cst <- getClientState
   iter <- runCoroutine $ runState cst act
-  (p, cst') <- runState cst $ handleIter iter
-  return p
+  evalState cst $ handleIter iter
 
 handleIter :: (EffectLift IO l,
                EffectState ClientState l,
@@ -265,6 +274,11 @@ handleIter iter = do
                              (handleIter <=< extend . extend .cont)
       liftIO $ updateSession $ session & clientMap %~ M.insert sender cst'
       return True
+    Next cont (Inquiry msg) -> do
+      let cst' = Asking msg "" (handleIter <=< extend . extend .cont)
+      liftIO $ updateSession $ session & clientMap %~ M.insert sender cst'
+      return True
+
 
 inputText :: Session -> NSObject -> String -> CLong -> CULong -> IO Bool
 inputText sess0 cl input keyCode flags =
@@ -274,6 +288,7 @@ inputText sess0 cl input keyCode flags =
         shifted = all (compatible Shift) modifs && not (null modifs)
     cst <- get
     case cst of
+      Asking {} -> inquiry (head input) key modifs
       Selecting {} -> doSelection (head input) key modifs
       _ -> do
         idle <- liftIO $ readIORef $ cst ^?! idling
@@ -318,10 +333,9 @@ inputText sess0 cl input keyCode flags =
            | otherwise -> case key of
                Just Delete
                  | Registering _ _ _ _ body mok _ <- cst, idle -> do
-                   oldBuf <- use registerBuf
                    buf <- registerBuf <%= initT
                    let msg = "[単語登録：" <> prettyOkuri body mok <> "]" <> buf
-                   client # setMarkedText (T.unpack msg) 0 (T.length msg)
+                   displayMarkedText msg
                    return True
                  | otherwise -> pushKey [Backspace]
                Just (isNewline -> True) ->
@@ -367,6 +381,17 @@ initT :: T.Text -> T.Text
 initT "" = ""
 initT t  = T.init t
 
+inquiry :: Given Environment
+            => Char -> Maybe Keyboard -> [Modifier]
+            -> ClientMachine Bool
+inquiry inp mkey mods
+  | maybe False isNewline mkey && null mods = continueWith . Just =<< use askBuf
+  | otherwise = do
+      buf <- askBuf <<>= T.singleton inp
+      msg <- use askMessage
+      displayMarkedText $ msg <> buf
+      return True
+
 doSelection :: Given Environment
             => Char -> Maybe Keyboard -> [Modifier]
             -> ClientMachine Bool
@@ -388,6 +413,20 @@ doSelection ch key modifs = do
             displayCurrentState
           Nothing -> do
             push Nothing
+     | all isAlphabeticModifier modifs && ch == 'X' -> do
+         let targ = z ^. focus . _head
+             msg = T.concat [body, maybe "" (T.singleton . fst) mok
+                            , " /", targ, "/ "
+                            ,"を削除しますか？(yes/no) "]
+         displayMarkedText msg
+         answer <- suspend $ Inquiry msg
+         if answer == Just "yes"
+           then do
+             let dicR = session ^. skkDic
+             liftIO $ modifyIORef' dicR $
+               unregister (Input body (fst <$> mok)) targ
+             finishSelection ""
+           else displayCurrentState >> return True
      | maybe False (`elem` [Return, Enter]) key , null modifs -> do
          finishSelection (head $ z ^. focus)
      | modifs == [Control] && key == Just (Char 'g') ->
@@ -398,6 +437,9 @@ doSelection ch key modifs = do
          _ <- finishSelection a
          pushKey [Incoming ch]
      | otherwise -> return True
+
+displayMarkedText :: (MonadIO m, Given Environment) => T.Text -> m ()
+displayMarkedText txt = sender # setMarkedText (T.unpack txt) 0 (T.length txt)
 
 finishSelection :: Given Environment => T.Text -> ClientMachine Bool
 finishSelection "" = do
@@ -446,7 +488,7 @@ pushKey input = do
           let css  = defPager cands
               msg  = showPage mokuri $ head css
           _ <- relay [Marked msg]
-          mans <- suspend $ Selection body mokuri cands
+          mans <- suspend $ Selection body (first toLower <$> mokuri) cands
           case mans of
             Just st -> sendCmd Refresh >> relay [Normal st]
             Nothing -> displayCurrentState >> return True
@@ -454,12 +496,13 @@ pushKey input = do
 
 displayCurrentState :: Given Environment => ClientMachine Bool
 displayCurrentState = get >>= \case
+  Asking msg buf _ -> relay [Marked $ msg <> buf]
   Selecting _ pg _ mok _ _ -> do
     let msg = showPage mok (pg ^. focus)
     relay [Marked msg]
   Registering _ _ _ buf mid mok _ -> do
-    let msg = "[単語登録："  <> prettyOkuri mid mok <> "] " <> buf
-    client # setMarkedText (T.unpack msg) 0 (T.length msg)
+    let msg = "[単語登録："  <> prettyOkuri mid mok <> "]" <> buf
+    displayMarkedText msg
     return True
   Composing  cmd _ _ -> do
     anss <- lift $ cmd CurrentState
@@ -476,7 +519,7 @@ startRegistration :: Given Environment => T.Text -> Maybe (Char, T.Text)
                    -> ClientMachine Bool
 startRegistration mid mok = do
   let msg = "[単語登録："  <> prettyOkuri mid (snd <$> mok) <> "]"
-  client # setMarkedText (T.unpack msg) 0 (T.length msg)
+  displayMarkedText msg
   mans <- suspend $ Registration mid (snd <$> mok)
   st <- get
   case mans of
@@ -508,9 +551,14 @@ relayWith cst [] = do
        cont Nothing
 relayWith cst0 mts = do
   case cst0 of
+    Asking msg buf0 _ -> do
+      askBuf <>= T.concat [t | Normal t <- mts]
+      let txt = msg <> buf0 <> T.concat (map unmark mts)
+      displayMarkedText txt
+      return True
     Composing {} -> liftM or $ forM (catMText mts) $ \case
       Marked txt -> do
-        sender # setMarkedText (T.unpack txt) 0 (T.length txt)
+        displayMarkedText txt
         return True
       Normal txt -> do
         sender # insertText (T.unpack txt)
@@ -520,7 +568,7 @@ relayWith cst0 mts = do
       let buf = buf0 <> T.concat [txt | Normal txt <- mts]
           msg = T.concat ["[単語登録：", prettyOkuri body mok, "]", buf]
                 <> T.concat [txt | Marked txt <- mts]
-      sender # setMarkedText (T.unpack msg) 0 (T.length msg)
+      displayMarkedText msg
       return True
     Selecting _ _ _ _ _cont disp -> disp mts
 
@@ -577,7 +625,7 @@ getClientState = do
   let mst  = session ^. clientMap . to (M.lookup sender)
       kana = session ^. convMode
   case mst of
-    Just st | kana == st ^. clientMode -> return st
+    Just st | maybe True (kana ==) (st ^? clientMode) -> return st
     _ -> newClientState
 
 nsLog :: MonadIO m => String -> m ()
