@@ -20,6 +20,9 @@ import           System.Environment                    (withArgs)
 build :: FilePath
 build = "_build"
 
+srcDirs :: [FilePath]
+srcDirs = ["src", "cocoa"]
+
 data AppSetting = AppSetting { app      :: String
                              , ldFlags  :: [String]
                              , packDBs  :: [FilePath]
@@ -68,6 +71,9 @@ buildWith AppSetting {..} = do
   phony "clean" $ do
     putNormal "cleaning..."
     removeFilesAfter "" ["//*_objc.h","//*_objc.m","//*_stub.h"]
+    xcodeRemove <- doesDirectoryExist $ "xcode_proj" </> app </> "build"
+    when xcodeRemove $
+      removeFilesAfter ("xcode_proj" </> app </> "build") ["//*"]
     remove <- doesDirectoryExist build
     when remove $
       removeFilesAfter build ["//*"]
@@ -99,9 +105,9 @@ buildWith AppSetting {..} = do
     need objs
     addObs <- getDirectoryFiles "" ["_build//*_objc.o"]
     putNormal $ "linking executable... "
-    cmd "ghc" "-o" out "-odir" build "-hidir" build "-stubdir" build "-outputdir" build
-              "-isrc" "-icocoa"
-              (objs ++ addObs) ldFlags dbs
+    command_ [] "ghc" $ map ("-i"++) srcDirs ++
+      [ "-o", out, "-odir", build, "-hidir", build, "-stubdir"
+      , build, "-outputdir", build] ++ objs ++ addObs ++ ldFlags ++ dbs
 
   ["_build//*.o", "_build//*.hi"] &*> \ [out, hi] -> do
     putNormal $ "building object: " ++ out
@@ -113,10 +119,12 @@ buildWith AppSetting {..} = do
         obcBase = dropExtension hs ++ "_objc"
         obcm = obcBase <.> "m"
         obch = obcBase <.> "h"
-    command_ [] "ghc" $ [ "-isrc", "-icocoa", "-M", "-odir", build, "-hidir", build
+    command_ [] "ghc" $ map ("-i"++) srcDirs ++ [ "-M", "-odir", build, "-hidir", build
                         , "-dep-suffix", "", "-dep-makefile", dep, hs] ++ dbs
     needMakefileDependencies dep
-    () <- cmd "ghc" "-isrc" "-icocoa" "-c" hs "-dynamic" "-o" out dbs "-odir" build "-hidir" build ("-i" ++ build)
+    command_ [] "ghc" $ map ("-i"++) srcDirs ++ ["-c", hs, "-dynamic"
+                      , "-o", out] ++ dbs ++ [ "-odir", build, "-hidir"
+                      , build, ("-i" ++ build)]
     gen'd <- doesFileExist obcm
     when gen'd $ do
       putNormal $ "compiling gen'd file: " ++ obcm
