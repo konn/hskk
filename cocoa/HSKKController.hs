@@ -188,10 +188,12 @@ objc_interface [cunit|
 
 objc_typecheck
 
-updateSession :: Given Environment => (Session -> Session) -> IO ()
-updateSession upd = do
+updateSession :: (MonadIO m, Given Environment) => (Session -> Session) -> m ()
+updateSession upd = liftIO $ do
   let myself = session ^. self
-      sess   = upd session
+  sess0 <- $(objc ['myself :> ''HSKKController] $
+             ''Session <: [cexp| myself.session |])
+  let sess = upd sess0
   $(objc ['sess :> ''Session, 'myself :> ''HSKKController] $
        void [cexp| myself.session = sess |])
 
@@ -265,6 +267,7 @@ handleIter iter = do
       let z = (zipper (defPager cands) & fromWithin traverse)
           cst'  = Selecting mode z body mok (handleIter <=< extend . extend . cont)
                             (relayWith cst)
+      put cst'
       liftIO $ updateSession $ clientMap %~ M.insert sender cst'
       return True
     Next cont (Registration body mok) -> do
@@ -273,10 +276,12 @@ handleIter iter = do
       (push, ref) <- liftIO $ newPusher defKanaTable mode dic
       let cst' = Registering push mode ref "" body mok
                              (handleIter <=< extend . extend .cont)
+      put cst'
       liftIO $ updateSession $ clientMap %~ M.insert sender cst'
       return True
     Next cont (Inquiry msg) -> do
       let cst' = Asking msg "" (handleIter <=< extend . extend .cont)
+      put cst'
       liftIO $ updateSession $ clientMap %~ M.insert sender cst'
       return True
 
@@ -299,12 +304,15 @@ inputText sess0 cl input keyCode flags =
               case mode of
                HankakuKatakana -> do
                  client # selectInputMode (modeToString Hiragana)
+                 updateSession $ convMode .~ Hiragana
                  return True
                Hiragana -> do
                  client # selectInputMode (modeToString Katakana)
+                 updateSession $ convMode .~ Katakana
                  return True
                Katakana -> do
                  client # selectInputMode (modeToString Hiragana)
+                 updateSession $ convMode .~ Hiragana
                  return True
                Ascii    -> pushKey [Incoming 'q']
            | null modifs && input == "q" -> pushKey [ToggleKana]
@@ -312,12 +320,15 @@ inputText sess0 cl input keyCode flags =
                case mode of
                  HankakuKatakana -> do
                    client # selectInputMode (modeToString Ascii)
+                   updateSession $ convMode .~ Ascii
                    return True
                  Hiragana -> do
                    client # selectInputMode (modeToString Ascii)
+                   updateSession $ convMode .~ Ascii
                    return True
                  Katakana -> do
                    client # selectInputMode (modeToString Ascii)
+                   updateSession $ convMode .~ Ascii
                    return True
                  Ascii    -> pushKey [Incoming 'l']
            | not (isControl $ head input) && all isAlphabeticModifier modifs &&
@@ -679,3 +690,4 @@ objc_implementation [ Typed 'inputText, Typed 'changeMode, Typed 'commit
 -- objc_initialise = undefined
 
 objc_emit
+
