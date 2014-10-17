@@ -18,9 +18,10 @@ import           Control.Effect
 import           Control.Exception      (SomeException (..), handle)
 import           Control.Lens           (makeLenses, makePrisms, noneOf)
 import           Control.Lens           (to, traverse, use, (%~), _head)
-import           Control.Lens           ((&), (.=), (.~), (<%=), (<>=))
+import           Control.Lens           ((&), (.=), (.~), (<>=))
 import           Control.Lens           ((^.), (^?), (^?!), _Just, _last)
-import           Control.Lens           ((<<>=))
+import           Control.Lens           ((%=), (<<>=))
+import           Control.Lens           ((<&>))
 import           Control.Lens.Extras    (is)
 import           Control.Monad          (forM, liftM, (<=<))
 import           Control.Monad.IO.Class (MonadIO, liftIO)
@@ -205,9 +206,6 @@ changeMode' sess kana = do
   give (Env sess undefined) $ updateSession $ convMode .~ kana
   return ()
 
-mapAccumEM' :: (s -> a -> IO (s, b)) -> s -> Event a -> SignalGen (Event b)
-mapAccumEM' fun s0 e = mapAccumEM s0 ((liftIO .) . flip fun <$> e)
-
 newClientState :: (Given Environment,
                    EffectLift IO l)
                => Effect l ClientState
@@ -344,11 +342,9 @@ inputText sess0 cl input keyCode flags =
                    cont Nothing
            | otherwise -> case key of
                Just Delete
-                 | Registering _ _ _ _ body mok _ <- cst, idle -> do
-                   buf <- registerBuf <%= initT
-                   let msg = "[単語登録：" <> prettyOkuri body mok <> "]" <> buf
-                   displayMarkedText msg
-                   return True
+                 | Registering _ _ _ _ _ _ _ <- cst, idle -> do
+                   registerBuf %= initT
+                   displayCurrentState
                  | otherwise -> pushKey [Backspace]
                Just (isNewline -> True) ->
                  if (cst & is _Registering) && idle
@@ -397,6 +393,7 @@ inquiry :: Given Environment
             => Char -> Maybe Keyboard -> [Modifier]
             -> ClientMachine Bool
 inquiry inp mkey mods
+  | mods == [Control] && mkey == Just (Char 'g') = continueWith Nothing
   | maybe False isNewline mkey && null mods = continueWith . Just =<< use askBuf
   | otherwise = do
       buf <- askBuf <<>= T.singleton inp
@@ -411,7 +408,7 @@ doSelection ch key modifs = do
   Selecting _ z body mok push _ <- get
   let cur = z ^. focus
   if | maybe False isNewline key && null modifs -> do
-         finishSelection (head cur)
+         finishSelection (Just $ head cur)
      | Just Space == key && null modifs ->
         case z & rightward of
           Just pg -> do
@@ -437,28 +434,28 @@ doSelection ch key modifs = do
              let dicR = session ^. skkDic
              liftIO $ modifyIORef' dicR $
                unregister (Input body (fst <$> mok)) targ
-             finishSelection ""
+             finishSelection $ Just ""
            else displayCurrentState >> return True
      | maybe False (`elem` [Return, Enter]) key , null modifs -> do
-         finishSelection (head $ z ^. focus)
+         finishSelection (Just $ head $ z ^. focus)
      | modifs == [Control] && key == Just (Char 'g') ->
-         finishSelection ""
+         finishSelection Nothing
      | null modifs, Just t <- defCSelector ch cur -> do
-         finishSelection t
+         finishSelection $ Just t
      | [a] <- cur, all isAlphabeticModifier modifs -> do
-         _ <- finishSelection a
+         _ <- finishSelection $ Just a
          pushKey [Incoming ch]
      | otherwise -> return True
 
 displayMarkedText :: (MonadIO m, Given Environment) => T.Text -> m ()
 displayMarkedText txt = sender # setMarkedText (T.unpack txt) 0 (T.length txt)
 
-finishSelection :: Given Environment => T.Text -> ClientMachine Bool
-finishSelection "" = do
-  continueWith Nothing
-finishSelection txt = get >>= \case
+finishSelection :: Given Environment => Maybe T.Text -> ClientMachine Bool
+finishSelection mtxt = get >>= \case
   Selecting _ _ _ mok cont _ -> do
-    cont $ Just $ txt <> maybe "" snd mok
+    cont $ mtxt <&> \case
+      ""  -> ""
+      txt -> txt <> maybe "" snd mok
   _ -> error "Not in selection state!"
 
 continueWith :: Given Environment => Maybe T.Text -> ClientMachine Bool
@@ -494,6 +491,7 @@ pushKey input = do
     let accepted = all (noneOf (_Idle . traverse) (is _NoHit)) ans
                    || Backspace `elem` input && not idled
     ((), buf) <- runWriter $ mapM_ extractTxt ans
+    nsLog $ "key result: " ++ show (ans, buf)
     if | Just (ConvNotFound mid mok) <- find (is _ConvNotFound) ans -> do
           startRegistration mid mok
        | Just (ConvFound body mokuri cands) <- find (is _ConvFound) ans -> do
@@ -503,7 +501,10 @@ pushKey input = do
           mans <- suspend $ Selection body (first toLower <$> mokuri) cands
           case mans of
             Just st -> sendCmd Refresh >> relay [Normal st]
-            Nothing -> displayCurrentState >> return True
+            Nothing -> do
+              cstttt <- get
+              nsLog $ "Selection canceled with state: " ++ show cstttt
+              displayCurrentState >> return True
        | otherwise ->  relay buf >> return accepted
 
 displayCurrentState :: Given Environment => ClientMachine Bool
@@ -597,11 +598,10 @@ prettyOkuri :: T.Text -> Maybe T.Text -> T.Text
 prettyOkuri t Nothing = t
 prettyOkuri t (Just c) = t <> "*" <> c
 
-extractTxt :: (EffectWriter [MarkedText] l, EffectState ClientState l) => SKKResult -> Effect l ()
+extractTxt :: (EffectWriter [MarkedText] l) => SKKResult -> Effect l ()
 extractTxt (Idle eds) = mapM_ plainExtractTxt eds
 extractTxt (Finished t) = do
   tell [Normal t]
-  registerBuf <>= t
 extractTxt (Okuri body o) = do
   let msg = "▽" <> body <> "*" <> o
   tell [Marked msg]
@@ -610,12 +610,11 @@ extractTxt (Converting str) = do
   tell [Marked ans]
 extractTxt _ = return ()
 
-plainExtractTxt :: (EffectWriter [MarkedText] l, EffectState ClientState l)
+plainExtractTxt :: (EffectWriter [MarkedText] l)
                 => KanaResult
                 -> Effect l ()
 plainExtractTxt (Converted text) = do
   tell [Normal text]
-  registerBuf <>= text
 plainExtractTxt (InProgress buf) = tell [Marked $ T.decodeUtf8 buf]
 plainExtractTxt NoHit = return ()
 
