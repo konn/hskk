@@ -373,16 +373,11 @@ inputText sess0 cl input keyCode flags =
                Just JisKana  -> return True
                Just (Char c)
                  | all (`elem` [Alternate, Shift]) modifs ->
-                   let c' = if shifted then toUpper c else c
-                   in  pushKey $ Incoming c'
+                   pushKey $ Incoming $ head input
                Just (JIS c)
                  | all (`elem` [Alternate, Shift]) modifs ->
-                   let c' = if shifted then toUpper c else c
-                   in pushKey $ Incoming c'
-               _ | all isAlphabeticModifier modifs && (cst & is _Registering) -> do
-                     nsLog $ "relaying input directly to the registerer " ++ input
-                     pushKey $ Incoming $ head input
-                 | otherwise -> resetClient >> return False
+                   pushKey $ Incoming $ head input
+               _ | otherwise -> resetClient >> return False
 
 errorLogger :: SomeException -> IO Bool
 errorLogger (SomeException exc) = do
@@ -496,7 +491,6 @@ pushKey input = do
                    || all (noneOf (_Idle.traverse) (is _NoHit)) ans
                    || Backspace == input && not idled
     ((), buf) <- runWriter $ mapM_ (extractTxt $ input ^? _Incoming) ans
-    nsLog $ "key result: " ++ show (input, ans, buf)
     if | Just (ConvNotFound mid mok) <- find (is _ConvNotFound) ans -> do
           startRegistration mid mok
        | Just (ConvFound body mokuri cands) <- find (is _ConvFound) ans -> do
