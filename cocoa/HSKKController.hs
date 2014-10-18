@@ -338,11 +338,9 @@ inputText sess0 cl input keyCode flags =
            | otherwise -> case key of
                Just Delete
                  | Registering {} <- cst, idle, all (isn't _Converting) curState -> do
-                   nsLog "you hit delete when idling registration"
                    old <- registerBuf <<%= initT
                    when (T.null old) $ const () <$> continueWith Nothing
                    clearMark
-                   nsLog "relaying from inputText/Delete/Registering"
                    relayCurrentState
                  | Ascii <- mode -> return False
                  | otherwise -> pushKey Backspace
@@ -357,10 +355,8 @@ inputText sess0 cl input keyCode flags =
                     | otherwise -> pushKey Finish
                Just Tab   | mode /= Ascii -> pushKey Complete
                Just Space | mode /= Ascii && idle && not convSelecting && all (isn't _Converting) curState -> do
-                             nsLog $ "Space is passed directly: " ++ show (idle, convSelecting, curState)
                              pushKey $ Incoming ' '
                           | mode /= Ascii -> do
-                             nsLog $ "Space is considered as Convert: " ++ show (idle, convSelecting, curState)
                              pushKey Convert
                Just (Char 'q') | all (compatible Control) modifs && not (null modifs) ->
                  if not convSelecting && idle && mode /= Ascii
@@ -415,14 +411,12 @@ doSelection ch key modifs = do
         case z & rightward of
           Just pg -> do
             selection .= pg
-            nsLog "relayCS from doSelection/Space/Just"
             relayCurrentState
           Nothing -> startRegistration body mok
      | Just Delete == key || null modifs && ch == 'x' -> do
         case z & leftward of
           Just pg -> do
             selection .= pg
-            nsLog "relayCS from doSelection/Delete/Just"
             relayCurrentState
           Nothing -> push Nothing
      | all isAlphabeticModifier modifs && ch == 'X' -> do
@@ -439,7 +433,7 @@ doSelection ch key modifs = do
                unregister (Input body (fst <$> mok)) targ
              clearMark
              finishSelection $ Just ""
-           else nsLog "relayCS doSelection/X/no" >> relayCurrentState >> return True
+           else relayCurrentState >> return True
      | maybe False (`elem` [Return, Enter]) key , null modifs -> do
          finishSelection (Just $ head $ z ^. focus)
      | modifs == [Control] && key == Just (Char 'g') ->
@@ -477,7 +471,6 @@ continueWith minp = (^? continue) <$> get >>= \case
   Just f -> f minp
   Nothing -> do
     resetClient
-    nsLog "relayCS from continueWith"
     relayCurrentState
 
 showPage ::  Maybe (Char, T.Text) -> [T.Text] -> T.Text
@@ -523,7 +516,6 @@ pushKey input = do
           case mans of
             Just st -> sendCmd Refresh >> relay [Normal st]
             Nothing -> do
-              nsLog "relayCS from pushKey/Selection/resume/Nothing"
               discard $ sendCmd Undo
               relayCurrentState
        | otherwise -> relay buf >> return accepted
@@ -542,7 +534,6 @@ renderCurrentState = get >>= \case
     return [Marked msg]
   Composing  cmd _ _ -> do
     anss <- lift $ cmd CurrentState
-    nsLog $ "rendering CS with Composing current result: " ++ show anss
     ((), buf) <- runWriter $ mapM_ (extractTxt Nothing) anss
     return buf
 
