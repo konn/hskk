@@ -392,10 +392,14 @@ skkConv0  Complete = do
   case mcomps of
     Nothing -> do
       buf <- fromMaybe "" <$> use convBuf
-      unless (T.null buf) $ do
+      if T.null buf
+        then convertingWith ""
+        else do
         let cs = filter (buf `T.isPrefixOf`) $
                  HM.keys $ skkDic ^. okuriNasiDic
-        unless (null cs)$ do
+        if null cs
+          then convertingWith ""
+          else do
           compCandidates ?= (zipper cs & fromWithin traverse)
           convBuf ?= head cs
           convertingWith ""
