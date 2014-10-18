@@ -337,7 +337,7 @@ inputText sess0 cl input keyCode flags =
                  Just cont -> cont Nothing
            | otherwise -> case key of
                Just Delete
-                 | Registering {} <- cst, idle -> do
+                 | Registering {} <- cst, idle, all (isn't _Converting) curState -> do
                    nsLog "you hit delete when idling registration"
                    old <- registerBuf <<%= initT
                    when (T.null old) $ const () <$> continueWith Nothing
@@ -507,7 +507,8 @@ pushKey input = do
     let accepted = (input & is _Incoming)
                    || all (noneOf (_Idle.traverse) (is _NoHit)) ans
                    || anyOf (traverse._Idle.traverse) (is _InProgress) ans
-                   || Backspace == input && anyOf (traverse._Idle.traverse) (isn't _NoHit) ans
+                   || Backspace == input &&
+                       (any (isn't _Idle) ans || anyOf (traverse._Idle.traverse) (isn't _NoHit) ans || any (is _Converting) old)
                    || isJust mbuf
     ((), buf0) <- runWriter $ mapM_ (extractTxt $ input ^? _Incoming) ans
     let buf | any (is _Converting) old && null buf0 = [Marked ""]
