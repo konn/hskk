@@ -414,7 +414,6 @@ doSelection ch key modifs = do
                             ,"を削除しますか？(yes/no) "]
          showAsMarked msg
          answer <- suspend $ Inquiry msg
-         clearMark
          if answer == Just "yes"
            then do
              let dicR = session ^. skkDic
@@ -435,7 +434,6 @@ doSelection ch key modifs = do
 
 showAsMarked :: (MonadIO m, Given Environment) => T.Text -> m ()
 showAsMarked txt = do
-  sender # setMarkedText "" 0 0
   sender # setMarkedText (T.unpack txt) 0 (T.length txt)
 
 displayMarkedText :: (Given Environment, MonadIO m)
@@ -637,7 +635,6 @@ plainExtractTxt Nothing NoHit = return ()
 commit :: Session -> NSObject -> IO ()
 commit sess sndr = do
   _ <- withSession' sess sndr $ do
-    clearMark
     a <- pushKey Finish
     resetClient
     return a
