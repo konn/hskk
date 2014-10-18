@@ -35,7 +35,6 @@ import           Control.Lens          ((<>=), (<?=), (?=), (^.), (^?), _2)
 import           Control.Lens          (_Just)
 import           Control.Lens          (isn't)
 import           Control.Lens.Extras   (is)
-import           Control.Monad         (unless)
 import           Control.Zipper        ((:>>), Top, focus, fromWithin, leftmost)
 import           Control.Zipper        (rightward, zipper)
 import           Data.Attoparsec.Text  (parseOnly)
@@ -203,6 +202,7 @@ data SKKState = SKKState { _kanaState      :: Maybe KanaState
                          , _convBuf        :: Maybe T.Text
                          , _slashed        :: Bool
                          , _compCandidates :: Maybe (Top :>> [T.Text] :>> T.Text)
+                         , _convCands      :: Maybe [T.Text]
                          } deriving (Typeable)
 makeLenses ''SKKState
 makePrisms ''SKKResult
@@ -213,7 +213,7 @@ isIdling r =
      ,r & is _Finished, r & is _ConvNotFound, r & is _ConvFound]
 
 newSKKState :: SKKState
-newSKKState = SKKState Nothing Nothing Nothing False Nothing
+newSKKState = SKKState Nothing Nothing Nothing False Nothing Nothing
 
 okuriBuf :: Applicative f => (T.Text -> f T.Text) -> SKKState -> f SKKState
 okuriBuf = okuriState . _Just . _2
@@ -288,22 +288,30 @@ skkConv0 cmd | Ascii <- kana =
     Incoming c    -> emit $ Idle [Converted $ T.singleton c]
     _             -> emit $ Idle []
 
-skkConv0 CurrentState = use convBuf >>= \case
-  Nothing  -> use kanaState >>= \case
-    Nothing -> emit $ Idle []
-    Just ks -> emit $ Idle [InProgress (ks ^. kanaBuf)]
-  Just buf -> do
-    sl <- use slashed
-    mok <- use okuriState
-    kn <- uses kanaState $ maybe "" (T.decodeUtf8 . view kanaBuf)
-    if | sl -> emit $ Converting buf
-       | Just (_, ok) <- mok -> emit $ Okuri buf (ok <> kn)
-       | otherwise -> emit $ Converting $ buf <> kn
+skkConv0 CurrentState = use convCands >>= \case
+  Just []  -> notFound
+  Just css -> convFound css
+  Nothing ->
+    use convBuf >>= \case
+      Nothing  -> use kanaState >>= \case
+        Nothing -> emit $ Idle []
+        Just ks -> emit $ Idle [InProgress (ks ^. kanaBuf)]
+      Just buf -> do
+        sl <- use slashed
+        mok <- use okuriState
+        kn <- uses kanaState $ maybe "" (T.decodeUtf8 . view kanaBuf)
+        if | sl -> emit $ Converting buf
+           | Just (_, ok) <- mok -> emit $ Okuri buf (ok <> kn)
+           | otherwise -> emit $ Converting $ buf <> kn
 
 skkConv0 Undo = do
-  isConv <- use converting
-  when isConv $ do
-    maybe (put newSKKState) (const $ okuriState .= Nothing) =<< use okuriState
+  cands <- use convCands
+  case cands of
+    Just _ -> convCands .= Nothing
+    Nothing -> do
+      isConv <- use converting
+      when isConv $ do
+        maybe (put newSKKState) (const $ okuriState .= Nothing) =<< use okuriState
 
 skkConv0 ToggleHankaku = do
   isConv <- use converting
@@ -340,6 +348,7 @@ skkConv0 Convert = do
           Nothing -> notFound
 
 skkConv0 Backspace = do
+  convCands .= Nothing
   isConv <- use converting
   if isConv
     then use okuriState >>= \case
@@ -381,10 +390,12 @@ skkConv0 Backspace = do
           emit $ Idle rs
         else emit $ Idle [NoHit]
 
-skkConv0 Finish =
+skkConv0 Finish = do
+  convCands .= Nothing
   maybe (skkConv0 $ Incoming '\n') finish =<< use convBuf
 
 skkConv0  Complete = do
+  convCands .= Nothing
   trail <- trailingText
   kanaState .= Nothing
   convBuf <>= Just trail
@@ -413,7 +424,9 @@ skkConv0 ToggleKana = do
   buf <- fromMaybe "" <$> use convBuf
   finish $ toggleKana kana (buf <> lo)
 
-skkConv0 (Incoming c) = go . viewS c  =<< get
+skkConv0 (Incoming c) = do
+  convCands .= Nothing
+  go . viewS c  =<< get
   where
     go StartConvert = do
       mans <- toKana Nothing
@@ -488,6 +501,7 @@ notFound  = do
   body <- uses convBuf (fromMaybe "")
   mokuri <- use okuriState
   okuriState .= Nothing
+  convCands ?= []
   emit $ ConvNotFound body mokuri
 
 convFound :: Given SKKEnv => [T.Text] -> Machine ()
@@ -495,6 +509,7 @@ convFound css = do
   mok  <- use okuriState
   body <- uses convBuf (fromMaybe "")
   okuriState .= Nothing
+  convCands  ?= css
   emit $ ConvFound body (second (convKana Hiragana kana) <$> mok) css
 
 okuriWith :: Given SKKEnv => T.Text -> Machine ()
@@ -539,8 +554,8 @@ slice n = unfoldr phi
 skkConvE :: KanaTable -> ConvMode
          -> Behavior Dictionary
          -> Event SKKCommand -> SignalGen (Event [SKKResult])
-skkConvE table mode dic input
-  = mapAccumE newSKKState (skkConv table mode <$> dic <@> input)
+skkConvE tbl mode dic input
+  = mapAccumE newSKKState (skkConv tbl mode <$> dic <@> input)
 
 newInput :: (Event b -> SignalGen (Event a)) -> IO (b -> IO a)
 newInput toEv = do

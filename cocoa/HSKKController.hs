@@ -21,6 +21,7 @@ import           Control.Lens.Extras    (is)
 import           Control.Monad          (forM, liftM, (<=<))
 import           Control.Monad          (when)
 import           Control.Monad          (unless)
+import qualified Control.Monad          as M
 import           Control.Monad.IO.Class (MonadIO, liftIO)
 import           Control.Zipper         ((:>>), Top, focus, fromWithin)
 import           Control.Zipper         (leftward, rightward, zipper)
@@ -145,6 +146,9 @@ makeLenses ''Environment
 makeLenses ''Session
 makePrisms ''MarkedText
 
+discard :: Functor f => f a -> f ()
+discard = M.void
+
 sender, client :: Given Environment => Client
 sender = given ^. currentClient
 client = given ^. currentClient
@@ -226,7 +230,7 @@ newPusher table kana dicR = do
   let push inp = do
         triggerExternalEvent eev inp
         ans <- step
-        unless (inp == CurrentState) $
+        unless (inp == CurrentState) $ do
           writeIORef isIn $ maybe True isIdling $ ans ^? _last
         return  ans
   return (push, isIn)
@@ -287,6 +291,9 @@ inputText sess0 cl input keyCode flags =
       Asking {} -> inquiry (head input) key modifs
       Selecting {} -> doSelection (head input) key modifs
       _ -> do
+        push <- gets (^?! pushCmd)
+        curState <- lift $ push CurrentState
+        let convSelecting = any (is _ConvFound) curState
         idle <- liftIO $ readIORef $ cst ^?! idling
         let mode = session ^. convMode
             dic  = session ^. skkDic
@@ -330,37 +337,47 @@ inputText sess0 cl input keyCode flags =
                  Just cont -> cont Nothing
            | otherwise -> case key of
                Just Delete
-                 | Registering _ _ _ _ _ _ _ <- cst, idle -> do
+                 | Registering {} <- cst, idle -> do
+                   nsLog "you hit delete when idling registration"
                    old <- registerBuf <<%= initT
                    when (T.null old) $ const () <$> continueWith Nothing
+                   clearMark
+                   nsLog "relaying from inputText/Delete/Registering"
                    relayCurrentState
+                 | Ascii <- mode -> return False
                  | otherwise -> pushKey Backspace
                Just (isNewline -> True) -> do
-                 if (cst & is _Registering) && idle
-                   then do
-                     let cont = cst ^?! continue
-                     buf <- use registerBuf
-                     if T.null buf
-                     then cont Nothing
-                     else cont $ Just buf
-                   else pushKey Finish
-               Just Tab    -> pushKey Complete
-               Just Space | idle -> pushKey $ Incoming ' '
-                          | otherwise -> pushKey Convert
+                 if | (cst & is _Registering) && idle -> do
+                       let cont = cst ^?! continue
+                       buf <- use registerBuf
+                       if T.null buf
+                       then cont Nothing
+                       else cont $ Just buf
+                    | Ascii <- mode -> return False
+                    | otherwise -> pushKey Finish
+               Just Tab   | mode /= Ascii -> pushKey Complete
+               Just Space | mode /= Ascii && idle && not convSelecting && all (isn't _Converting) curState -> do
+                             nsLog $ "Space is passed directly: " ++ show (idle, convSelecting, curState)
+                             pushKey $ Incoming ' '
+                          | mode /= Ascii -> do
+                             nsLog $ "Space is considered as Convert: " ++ show (idle, convSelecting, curState)
+                             pushKey Convert
                Just (Char 'q') | all (compatible Control) modifs && not (null modifs) ->
-                 if idle && mode /= Ascii
+                 if not convSelecting && idle && mode /= Ascii
                  then client # selectInputMode (modeToString HankakuKatakana) >> return True
                  else pushKey ToggleHankaku
                Just (JIS 'q') | all (compatible Control) modifs && not (null modifs) ->
-                 if idle && mode /= Ascii
+                 if not convSelecting && idle && mode /= Ascii
                  then client # selectInputMode (modeToString HankakuKatakana) >> return True
                  else pushKey ToggleHankaku
                Just JisEisuu -> return True
                Just JisKana  -> return True
                Just (Char _)
+                 | mode == Ascii -> return False
                  | all (`elem` [Alternate, Shift]) modifs ->
                    pushKey $ Incoming $ head input
                Just (JIS _)
+                 | mode == Ascii -> return False
                  | all (`elem` [Alternate, Shift]) modifs ->
                    pushKey $ Incoming $ head input
                _ | otherwise -> resetClient >> return False
@@ -398,15 +415,16 @@ doSelection ch key modifs = do
         case z & rightward of
           Just pg -> do
             selection .= pg
+            nsLog "relayCS from doSelection/Space/Just"
             relayCurrentState
           Nothing -> startRegistration body mok
      | Just Delete == key || null modifs && ch == 'x' -> do
         case z & leftward of
           Just pg -> do
             selection .= pg
+            nsLog "relayCS from doSelection/Delete/Just"
             relayCurrentState
-          Nothing -> do
-            push Nothing
+          Nothing -> push Nothing
      | all isAlphabeticModifier modifs && ch == 'X' -> do
          let targ = z ^. focus . _head
              msg = T.concat [body, maybe "" (T.singleton . fst) mok
@@ -419,8 +437,9 @@ doSelection ch key modifs = do
              let dicR = session ^. skkDic
              liftIO $ modifyIORef' dicR $
                unregister (Input body (fst <$> mok)) targ
+             clearMark
              finishSelection $ Just ""
-           else relayCurrentState >> return True
+           else nsLog "relayCS doSelection/X/no" >> relayCurrentState >> return True
      | maybe False (`elem` [Return, Enter]) key , null modifs -> do
          finishSelection (Just $ head $ z ^. focus)
      | modifs == [Control] && key == Just (Char 'g') ->
@@ -428,7 +447,7 @@ doSelection ch key modifs = do
      | null modifs, Just t <- defCSelector ch cur -> do
          finishSelection $ Just t
      | [a] <- cur, all isAlphabeticModifier modifs -> do
-         _ <- finishSelection $ Just a
+         discard $ finishSelection $ Just a
          pushKey $ Incoming ch
      | otherwise -> return True
 
@@ -447,18 +466,18 @@ clearMark :: (MonadIO m, Given Environment) => m ()
 clearMark = showAsMarked ""
 
 finishSelection :: Given Environment => Maybe T.Text -> ClientMachine Bool
-finishSelection mtxt = get >>= \case
-  Selecting _ _ _ mok cont _ -> do
-    cont $ mtxt <&> \case
-      ""  -> ""
-      txt -> txt <> maybe "" snd mok
-  _ -> error "Not in selection state!"
+finishSelection mtxt = do
+  Selecting _ _ _ mok cont _ <- get
+  cont $ mtxt <&> \case
+    ""  -> ""
+    txt -> txt <> maybe "" snd mok
 
 continueWith :: Given Environment => Maybe T.Text -> ClientMachine Bool
 continueWith minp = (^? continue) <$> get >>= \case
   Just f -> f minp
   Nothing -> do
     resetClient
+    nsLog "relayCS from continueWith"
     relayCurrentState
 
 showPage ::  Maybe (Char, T.Text) -> [T.Text] -> T.Text
@@ -490,7 +509,6 @@ pushKey input = do
                    || anyOf (traverse._Idle.traverse) (is _InProgress) ans
                    || Backspace == input && anyOf (traverse._Idle.traverse) (isn't _NoHit) ans
                    || isJust mbuf
-    cur <- get
     ((), buf0) <- runWriter $ mapM_ (extractTxt $ input ^? _Incoming) ans
     let buf | any (is _Converting) old && null buf0 = [Marked ""]
             | otherwise = buf0
@@ -499,13 +517,14 @@ pushKey input = do
        | Just (ConvFound body mokuri cands) <- find (is _ConvFound) ans -> do
           let css  = defPager cands
               msg  = showPage mokuri $ head css
-          _ <- relay [Marked msg]
+          discard $ relay [Marked msg]
           mans <- suspend $ Selection body (first toLower <$> mokuri) cands
           case mans of
             Just st -> sendCmd Refresh >> relay [Normal st]
             Nothing -> do
-              cstttt <- get
-              relayCurrentState >> return True
+              nsLog "relayCS from pushKey/Selection/resume/Nothing"
+              discard $ sendCmd Undo
+              relayCurrentState
        | otherwise -> relay buf >> return accepted
 
 renderCurrentState :: Given Environment => ClientMachine [MarkedText]
@@ -522,6 +541,7 @@ renderCurrentState = get >>= \case
     return [Marked msg]
   Composing  cmd _ _ -> do
     anss <- lift $ cmd CurrentState
+    nsLog $ "rendering CS with Composing current result: " ++ show anss
     ((), buf) <- runWriter $ mapM_ (extractTxt Nothing) anss
     return buf
 
@@ -530,14 +550,15 @@ relayCurrentState = do
   rendered <- renderCurrentState
   reg <- gets $ is _Registering
   if reg
-    then mapM_ displayMarkedText rendered >> return True
-    else relay rendered
+    then mapM_ displayMarkedText rendered
+    else relay rendered >> return ()
+  return True
 
 sendCmd :: (EffectLift IO l, EffectState ClientState l)
-        => SKKCommand -> Effect l Bool
-sendCmd cmd = get >>= \case
-  Selecting {} -> return True
-  cst          -> all (not . isIdling) <$> liftIO (cmd & cst ^?! pushCmd)
+        => SKKCommand -> Effect l [SKKResult]
+sendCmd cmd = gets (^? pushCmd) >>= \case
+  Nothing   -> return []
+  Just push -> liftIO $ push cmd
 
 startRegistration :: Given Environment => T.Text -> Maybe (Char, T.Text)
                    -> ClientMachine Bool
@@ -551,11 +572,11 @@ startRegistration mid mok = do
       let dic = session ^. skkDic
       liftIO $ modifyIORef' dic $ insert (Input mid (toLower . fst <$> mok)) $ Candidate str ""
       let conv'd = str <> maybe "" snd mok
-      _ <- sendCmd Refresh
+      discard $ sendCmd Refresh
       case st of
         Selecting _ _ _ _ cont _ -> cont (Just conv'd)
         _ -> relayWith st [Normal conv'd]
-    _ -> relayCurrentState >> return True
+    _ -> sendCmd Undo >> relayCurrentState
 
 relay :: Given Environment
       => [MarkedText]
@@ -573,7 +594,7 @@ relayWith cst [] = do
   case cst ^? continue of
      Nothing -> do
        resetClient
-       displayCurrentState
+       -- displayCurrentState
        return True
      Just cont -> do
        cont Nothing
@@ -585,7 +606,6 @@ relayWith cst0 mts = do
       showAsMarked txt
       return True
     Composing {} -> do
-      displayCurrentState
       liftM or $ forM (catMText mts) $ \case
         Marked txt -> do
           showAsMarked txt
@@ -633,12 +653,10 @@ plainExtractTxt Nothing NoHit = return ()
 
 
 commit :: Session -> NSObject -> IO ()
-commit sess sndr = do
-  _ <- withSession' sess sndr $ do
-    a <- pushKey Finish
-    resetClient
-    return a
-  return ()
+commit sess sndr = discard $ withSession' sess sndr $ do
+  a <- pushKey Finish
+  resetClient
+  return a
 
 getCurrentMode :: Session -> String
 getCurrentMode sess = sess ^. convMode . to modeToString
