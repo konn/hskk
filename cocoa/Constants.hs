@@ -26,3 +26,15 @@ hiraganaModeKey = "com.apple.inputmethod.Japanese.Hiragana"
 katakanaModeKey = "com.apple.inputmethod.Japanese.Katakana"
 hankakuModeKey  = "com.apple.inputmethod.Japanese.HalfWidthKana"
 asciiModeKey = "com.apple.inputmethod.Roman"
+
+inlineCountKey :: String
+inlineCountKey = "inlineCandidateCount"
+
+candidateLabelKey :: String
+candidateLabelKey = "candidateLabel"
+
+userDicKey :: String
+userDicKey = "userDicPath"
+
+userDefaultName :: String
+userDefaultName = "group.konn-san.com.inputmethod.hSKK"

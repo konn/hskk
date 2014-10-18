@@ -1,19 +1,19 @@
 //
-//  hSKKTests.m
-//  hSKKTests
+//  hSKKPreferencesTests.m
+//  hSKKPreferencesTests
 //
-//  Created by 石井 大海 on 2014/09/23.
+//  Created by 石井 大海 on 2014/10/19.
 //  Copyright (c) 2014年 Hiromi ISHII. All rights reserved.
 //
 
 #import <Cocoa/Cocoa.h>
 #import <XCTest/XCTest.h>
 
-@interface hSKKTests : XCTestCase
+@interface hSKKPreferencesTests : XCTestCase
 
 @end
 
-@implementation hSKKTests
+@implementation hSKKPreferencesTests
 
 - (void)setUp {
     [super setUp];

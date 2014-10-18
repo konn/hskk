@@ -1,9 +1,10 @@
-{-# LANGUAGE DataKinds, DeriveDataTypeable, EmptyDataDecls                #-}
-{-# LANGUAGE FlexibleContexts, FlexibleInstances, LambdaCase              #-}
-{-# LANGUAGE MultiParamTypeClasses, MultiWayIf, NoMonomorphismRestriction #-}
-{-# LANGUAGE OverloadedStrings, PatternGuards, QuasiQuotes, RankNTypes    #-}
-{-# LANGUAGE RecursiveDo, StandaloneDeriving, TemplateHaskell             #-}
-{-# LANGUAGE TupleSections, TypeFamilies, TypeOperators, ViewPatterns     #-}
+{-# LANGUAGE DataKinds, DeriveDataTypeable, EmptyDataDecls               #-}
+{-# LANGUAGE FlexibleContexts, FlexibleInstances, ImpredicativeTypes     #-}
+{-# LANGUAGE LambdaCase, MultiParamTypeClasses, MultiWayIf               #-}
+{-# LANGUAGE NoMonomorphismRestriction, OverloadedStrings, PatternGuards #-}
+{-# LANGUAGE QuasiQuotes, RankNTypes, RecursiveDo, StandaloneDeriving    #-}
+{-# LANGUAGE TemplateHaskell, TupleSections, TypeFamilies, TypeOperators #-}
+{-# LANGUAGE ViewPatterns                                                #-}
 {-# OPTIONS_GHC -fno-warn-unused-binds -fno-warn-orphans #-}
 module HSKKController ( objc_initialise ) where
 import Constants
@@ -40,6 +41,7 @@ import           Data.Typeable          (Typeable)
 import           FRP.Ordrea
 import           Language.C.Inline.ObjC
 import           Language.C.Quote.ObjC
+import           System.IO.Unsafe       (unsafePerformIO)
 
 objc_import ["<Cocoa/Cocoa.h>",
              "<InputMethodKit/InputMethodKit.h>",
@@ -47,6 +49,13 @@ objc_import ["<Cocoa/Cocoa.h>",
 
 defineClass "NSObject"    Nothing
 idMarshaller ''NSObject
+
+defineClass "NSUserDefaults" (Just ''NSObject)
+idMarshaller ''NSUserDefaults
+
+stdUserDefaults :: MonadIO m => m NSUserDefaults
+stdUserDefaults = liftIO $(objc [] $
+                    Class ''NSUserDefaults <: [cexp| [[NSUserDefaults alloc] initWithSuiteName: @$string:(userDefaultName)] |])
 
 defineClass "IMKServer" (Just ''NSObject)
 idMarshaller ''IMKServer
@@ -59,6 +68,20 @@ idMarshaller ''HSKKController
 
 defineClass "NSString"    (Just ''NSObject)
 idMarshaller ''NSString
+
+defineSelector newSelector { selector = "integerForKey"
+                           , reciever = (''NSUserDefaults, "def")
+                           , arguments = ["key" :>>: ''String]
+                           , returnType = Just [t| Int |]
+                           , definition = [cexp| [def integerForKey: key] |]
+                           }
+
+defineSelector newSelector { selector = "stringForKey"
+                           , reciever = (''NSUserDefaults, "def")
+                           , arguments = ["key" :>>: ''String]
+                           , returnType = Just [t| String |]
+                           , definition = [cexp| [def stringForKey: key] |]
+                           }
 
 defineSelector
   newSelector { selector = "insertText"
@@ -84,6 +107,12 @@ defineSelector
               , definition = [cexp| [(id)sender selectInputMode: mode]|]
               }
 
+defineSelector newSelector { selector = "synchronize"
+                           , reciever = (''NSUserDefaults, "def")
+                           , definition = [cexp| [def synchronize] |]
+                           }
+
+
 type ClientMachine = Effect (State ClientState :+
                              Coroutine Waiting (Maybe T.Text) :+
                              Lift IO :+ Nil)
@@ -93,9 +122,18 @@ data Environment = Env { _currentSession :: Session
                        } deriving (Typeable)
 
 data Waiting = Registration T.Text (Maybe T.Text)
-             | Selection T.Text (Maybe (Char, T.Text)) [T.Text]
+             | Selection T.Text (Maybe (Char, T.Text)) [[T.Text]] String
              | Inquiry T.Text
-               deriving (Read, Show, Eq, Ord)
+
+instance Show Waiting where
+  showsPrec d (Registration t m) =
+    showParen (d > 10) $ showString "Registration " . showsPrec 11 t .
+    showChar ' ' . showsPrec 11 m
+  showsPrec d (Selection t m u _) =
+    showParen (d > 10) $ showString "Selection " . showsPrec 11 t .
+    showChar ' ' . showsPrec 11 m . showChar ' ' . showsPrec 11 u
+  showsPrec d (Inquiry t) =
+    showParen (d > 10) $ showString "Inquiry " . showsPrec 11 t
 
 type Continuation = Maybe T.Text -> ClientMachine Bool
 
@@ -121,12 +159,13 @@ data ClientState = Composing { _pushCmd    :: SKKCommand -> IO [SKKResult]
                              , _clientMode :: ConvMode
                              , _idling     :: IORef Bool
                              }
-                 | Selecting { _clientMode :: ConvMode
-                             , _selection  :: Top :>> [[T.Text]] :>> [T.Text]
-                             , _selGokan   :: T.Text
-                             , _selOkuri   :: Maybe (Char, T.Text)
-                             , _continue   :: Continuation
-                             , _display    :: [MarkedText] -> ClientMachine Bool
+                 | Selecting { _clientMode    :: ConvMode
+                             , _selection     :: Top :>> [[T.Text]] :>> [T.Text]
+                             , _selectionKeys :: String
+                             , _selGokan      :: T.Text
+                             , _selOkuri      :: Maybe (Char, T.Text)
+                             , _continue      :: Continuation
+                             , _display       :: [MarkedText] -> ClientMachine Bool
                              }
                  | Registering { _pushCmd       :: SKKCommand -> IO [SKKResult]
                                , _clientMode    :: ConvMode
@@ -167,7 +206,7 @@ instance Show ClientState where
     showString "Registering " . showsPrec 11 mode . showChar ' ' .
     showsPrec 11 buf . showChar ' ' . showsPrec 11 gok .
     showChar ' ' . showsPrec 11 oku
-  showsPrec d (Selecting mode cur gok oku _ _) =
+  showsPrec d (Selecting mode cur _ gok oku _ _) =
     showParen (d > 10) $
     showString "Selecting " . showsPrec 11 mode . showChar ' ' .
     showsPrec 11 gok . showChar ' ' . showsPrec 11 oku . showChar ' ' .
@@ -255,11 +294,11 @@ handleIter iter = do
       liftIO $ updateSession $ clientMap %~ M.insert sender cst'
       put cst'
       return a
-    Next cont (Selection body mok cands) -> do
+    Next cont (Selection body mok cands keys) -> do
       cst <- get
       let mode = session ^. convMode
-      let z = (zipper (defPager cands) & fromWithin traverse)
-          cst'  = Selecting mode z body mok (handleIter <=< extend . extend . cont)
+          z = zipper cands & fromWithin traverse
+          cst'  = Selecting mode z keys body mok (handleIter <=< extend . extend . cont)
                             (relayWith cst)
       put cst'
       liftIO $ updateSession $ clientMap %~ M.insert sender cst'
@@ -403,7 +442,7 @@ doSelection :: Given Environment
             => Char -> Maybe Keyboard -> [Modifier]
             -> ClientMachine Bool
 doSelection ch key modifs = do
-  Selecting _ z body mok push _ <- get
+  Selecting _ z sel body mok push _ <- get
   let cur = z ^. focus
   if | maybe False isNewline key && null modifs -> do
          finishSelection (Just $ head cur)
@@ -438,7 +477,7 @@ doSelection ch key modifs = do
          finishSelection (Just $ head $ z ^. focus)
      | modifs == [Control] && key == Just (Char 'g') ->
          finishSelection Nothing
-     | null modifs, Just t <- defCSelector ch cur -> do
+     | null modifs, Just t <- selectBy sel ch cur -> do
          finishSelection $ Just t
      | [a] <- cur, all isAlphabeticModifier modifs -> do
          discard $ finishSelection $ Just a
@@ -461,7 +500,7 @@ clearMark = showAsMarked ""
 
 finishSelection :: Given Environment => Maybe T.Text -> ClientMachine Bool
 finishSelection mtxt = do
-  Selecting _ _ _ mok cont _ <- get
+  Selecting _ _ _ _ mok cont _ <- get
   cont $ mtxt <&> \case
     ""  -> ""
     txt -> txt <> maybe "" snd mok
@@ -473,13 +512,13 @@ continueWith minp = (^? continue) <$> get >>= \case
     resetClient
     relayCurrentState
 
-showPage ::  Maybe (Char, T.Text) -> [T.Text] -> T.Text
-showPage mok [a]   = "▼" <> a <> maybe "" (T.cons '*' . snd) mok
-showPage mok cands =
+showPage ::  String -> Maybe (Char, T.Text) -> [T.Text] -> T.Text
+showPage _ mok [a]   = "▼" <> a <> maybe "" (T.cons '*' . snd) mok
+showPage sels mok cands =
   T.concat ["[候補: "
            , T.intercalate " / " $ zipWith
              (\a b -> T.singleton a <> ": " <> b)
-             "asdfjkl"  cands
+             sels  cands
            , "]", maybe "" (T.cons '*' . snd) mok]
 
 isNewline :: Keyboard -> Bool
@@ -509,10 +548,15 @@ pushKey input = do
     if | Just (ConvNotFound mid mok) <- find (is _ConvNotFound) ans -> do
           startRegistration mid mok
        | Just (ConvFound body mokuri cands) <- find (is _ConvFound) ans -> do
-          let css  = defPager cands
-              msg  = showPage mokuri $ head css
+          udef <- stdUserDefaults
+          udef # synchronize
+          count <- udef # integerForKey inlineCountKey
+          keys  <- udef # stringForKey candidateLabelKey
+          nsLog $ "showing cand with: (count, keys) = " ++ show (count, keys)
+          let css  = paging count keys cands
+              msg  = showPage keys mokuri $ head css
           discard $ relay [Marked msg]
-          mans <- suspend $ Selection body (first toLower <$> mokuri) cands
+          mans <- suspend $ Selection body (first toLower <$> mokuri) css keys
           case mans of
             Just st -> sendCmd Refresh >> relay [Normal st]
             Nothing -> do
@@ -523,8 +567,8 @@ pushKey input = do
 renderCurrentState :: Given Environment => ClientMachine [MarkedText]
 renderCurrentState = get >>= \case
   Asking msg buf _ -> return [Marked $ msg <> buf]
-  Selecting _ pg _ mok _ _ -> do
-    let msg = showPage mok (pg ^. focus)
+  Selecting _ pg keys _ mok _ _ -> do
+    let msg = showPage keys mok (pg ^. focus)
     return [Marked msg]
   Registering push _ _ buf mid mok _ -> do
     ans <- lift $ push CurrentState
@@ -566,7 +610,7 @@ startRegistration mid mok = do
       let conv'd = str <> maybe "" snd mok
       discard $ sendCmd Refresh
       case st of
-        Selecting _ _ _ _ cont _ -> cont (Just conv'd)
+        Selecting _ _ _ _ _ cont _ -> cont (Just conv'd)
         _ -> relayWith st [Normal conv'd]
     _ -> sendCmd Undo >> relayCurrentState
 
@@ -612,7 +656,7 @@ relayWith cst0 mts = do
                 <> T.concat [txt | Marked txt <- mts]
       showAsMarked msg
       return True
-    Selecting _ _ _ _ _cont disp ->  disp mts
+    Selecting _ _ _ _ _ _cont disp ->  disp mts
 
 unmark :: MarkedText -> T.Text
 unmark (Marked t) = t
@@ -669,7 +713,7 @@ newSession :: HSKKController -> IO Session
 newSession ctrl = Session M.empty ctrl Hiragana <$> newIORef sDictionary
 
 objc_implementation [ Typed 'inputText, Typed 'changeMode, Typed 'commit
-                    , Typed 'newSession, Typed 'getCurrentMode ]
+                    , Typed 'newSession, Typed 'getCurrentMode]
   [cunit|
 @implementation HSKKController
 - (id)initWithServer:(typename IMKServer *)server
@@ -704,6 +748,19 @@ objc_implementation [ Typed 'inputText, Typed 'changeMode, Typed 'commit
 - (id)valueForTag:(long) tag client:(id)sender
 {
   return (id)getCurrentMode(self.session);
+}
+
+- (typename NSMenu *)menu
+{
+  return [[NSApp delegate] menu];
+}
+
+- (void)showPreferences:(id)sender {
+    typename NSString* path = [NSString stringWithFormat:@"%@/hSKKPreferences.app",
+                               [[NSBundle mainBundle] sharedSupportPath]];
+   NSLog(@"launching: %@", path);
+   [[[NSUserDefaults alloc] initWithSuiteName: @$string:(userDefaultName)] synchronize];
+   [[NSWorkspace sharedWorkspace] launchApplication:path];
 }
 
 @end

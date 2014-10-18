@@ -4,8 +4,24 @@
         <plugIn identifier="com.apple.InterfaceBuilder.CocoaPlugin" version="6245"/>
     </dependencies>
     <objects>
-        <customObject id="-2" userLabel="File's Owner" customClass="NSApplication"/>
+        <customObject id="-2" userLabel="File's Owner" customClass="NSApplication">
+            <connections>
+                <outlet property="delegate" destination="ZDs-Sp-yvt" id="UXK-Ng-h4m"/>
+            </connections>
+        </customObject>
         <customObject id="-1" userLabel="First Responder" customClass="FirstResponder"/>
         <customObject id="-3" userLabel="Application" customClass="NSObject"/>
+        <menu id="tAt-h7-2JW">
+            <items>
+                <menuItem title="Preferences…" tag="1" id="cxN-R1-n8c">
+                    <modifierMask key="keyEquivalentModifierMask"/>
+                </menuItem>
+            </items>
+        </menu>
+        <customObject id="ZDs-Sp-yvt" customClass="AppDelegate">
+            <connections>
+                <outlet property="menu" destination="tAt-h7-2JW" id="l6d-yJ-Zrq"/>
+            </connections>
+        </customObject>
     </objects>
 </document>

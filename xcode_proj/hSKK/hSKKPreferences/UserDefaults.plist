@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>userDicPath</key>
+	<string>~/Library/Application Support/hSKK/skk-jisyo.utf8</string>
+	<key>otherDics</key>
+	<dict>
+		<key>kind</key>
+		<array>
+			<integer>0</integer>
+		</array>
+		<key>location</key>
+		<array>
+			<string>SKK-JISYO.L</string>
+		</array>
+	</dict>
+	<key>inlineCandidateCount</key>
+	<integer>4</integer>
+	<key>candidateLabel</key>
+	<string>asdfjkl</string>
+</dict>
+</plist>

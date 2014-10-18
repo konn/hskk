@@ -11,26 +11,22 @@
 		958EA57019D1440B00B191A9 /* main.m in Sources */ = {isa = PBXBuildFile; fileRef = 958EA56F19D1440B00B191A9 /* main.m */; };
 		958EA57519D1440B00B191A9 /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 958EA57419D1440B00B191A9 /* Images.xcassets */; };
 		958EA57819D1440B00B191A9 /* MainMenu.xib in Resources */ = {isa = PBXBuildFile; fileRef = 958EA57619D1440B00B191A9 /* MainMenu.xib */; };
-		958EA58419D1440B00B191A9 /* hSKKTests.m in Sources */ = {isa = PBXBuildFile; fileRef = 958EA58319D1440B00B191A9 /* hSKKTests.m */; };
 		958EA58E19D14EB800B191A9 /* icon-03.tiff in Resources */ = {isa = PBXBuildFile; fileRef = 958EA58D19D14EB800B191A9 /* icon-03.tiff */; };
 		958EA59119D1501200B191A9 /* HSKKController.m in Sources */ = {isa = PBXBuildFile; fileRef = 958EA59019D1501200B191A9 /* HSKKController.m */; };
 		958EA59A19D151DF00B191A9 /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 958EA59919D151DF00B191A9 /* Cocoa.framework */; };
+		95B6A67319F2E2C6005CD2CF /* AppDelegate.m in Sources */ = {isa = PBXBuildFile; fileRef = 95B6A67219F2E2C6005CD2CF /* AppDelegate.m */; };
+		95B6A67D19F2E4E7005CD2CF /* main.m in Sources */ = {isa = PBXBuildFile; fileRef = 95B6A67C19F2E4E7005CD2CF /* main.m */; };
+		95B6A68019F2E4E7005CD2CF /* PreferencesDelegate.m in Sources */ = {isa = PBXBuildFile; fileRef = 95B6A67F19F2E4E7005CD2CF /* PreferencesDelegate.m */; };
+		95B6A68219F2E4E7005CD2CF /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 95B6A68119F2E4E7005CD2CF /* Images.xcassets */; };
+		95B6A68519F2E4E7005CD2CF /* Preferences.xib in Resources */ = {isa = PBXBuildFile; fileRef = 95B6A68319F2E4E7005CD2CF /* Preferences.xib */; };
+		95B6A69919F2F724005CD2CF /* UserDefaults.plist in Resources */ = {isa = PBXBuildFile; fileRef = 95B6A69819F2F724005CD2CF /* UserDefaults.plist */; };
+		95B6A69A19F2F724005CD2CF /* UserDefaults.plist in Resources */ = {isa = PBXBuildFile; fileRef = 95B6A69819F2F724005CD2CF /* UserDefaults.plist */; };
 		95F1BC0B19DA773C000B286C /* hiragana.tiff in Resources */ = {isa = PBXBuildFile; fileRef = 95F1BC0A19DA773C000B286C /* hiragana.tiff */; };
 		95F1BC0E19DA7832000B286C /* katakana.tiff in Resources */ = {isa = PBXBuildFile; fileRef = 95F1BC0D19DA7832000B286C /* katakana.tiff */; };
 		95F1BC1019DA7994000B286C /* hankaku.tiff in Resources */ = {isa = PBXBuildFile; fileRef = 95F1BC0F19DA7994000B286C /* hankaku.tiff */; };
 		95F1BC1419DA7EA9000B286C /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = 95F1BC1319DA7EA9000B286C /* InfoPlist.strings */; };
 		95F1BC1619DA8038000B286C /* ascii.tiff in Resources */ = {isa = PBXBuildFile; fileRef = 95F1BC1519DA8038000B286C /* ascii.tiff */; };
 /* End PBXBuildFile section */
-
-/* Begin PBXContainerItemProxy section */
-		958EA57E19D1440B00B191A9 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 958EA56219D1440B00B191A9 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = 958EA56919D1440B00B191A9;
-			remoteInfo = hSKK;
-		};
-/* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
 		953CEFF219D1587B00548922 /* InputMethodKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = InputMethodKit.framework; path = System/Library/Frameworks/InputMethodKit.framework; sourceTree = SDKROOT; };
@@ -39,15 +35,22 @@
 		958EA56F19D1440B00B191A9 /* main.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = main.m; sourceTree = "<group>"; };
 		958EA57419D1440B00B191A9 /* Images.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Images.xcassets; sourceTree = "<group>"; };
 		958EA57719D1440B00B191A9 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/MainMenu.xib; sourceTree = "<group>"; };
-		958EA57D19D1440B00B191A9 /* hSKKTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = hSKKTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		958EA58219D1440B00B191A9 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		958EA58319D1440B00B191A9 /* hSKKTests.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = hSKKTests.m; sourceTree = "<group>"; };
 		958EA58D19D14EB800B191A9 /* icon-03.tiff */ = {isa = PBXFileReference; lastKnownFileType = image.tiff; path = "icon-03.tiff"; sourceTree = "<group>"; };
 		958EA58F19D1501200B191A9 /* HSKKController.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = HSKKController.h; sourceTree = "<group>"; };
 		958EA59019D1501200B191A9 /* HSKKController.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = HSKKController.m; sourceTree = "<group>"; };
 		958EA59919D151DF00B191A9 /* Cocoa.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Cocoa.framework; path = System/Library/Frameworks/Cocoa.framework; sourceTree = SDKROOT; };
 		958EA59E19D1539500B191A9 /* AppKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AppKit.framework; path = ../../../../../../../../../System/Library/Frameworks/AppKit.framework; sourceTree = "<group>"; };
 		958EA5A019D153AF00B191A9 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = ../../../../../../../../../System/Library/Frameworks/Foundation.framework; sourceTree = "<group>"; };
+		95B6A67119F2E2C6005CD2CF /* AppDelegate.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = AppDelegate.h; sourceTree = "<group>"; };
+		95B6A67219F2E2C6005CD2CF /* AppDelegate.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = AppDelegate.m; sourceTree = "<group>"; };
+		95B6A67819F2E4E7005CD2CF /* hSKKPreferences.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = hSKKPreferences.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		95B6A67B19F2E4E7005CD2CF /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		95B6A67C19F2E4E7005CD2CF /* main.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = main.m; sourceTree = "<group>"; };
+		95B6A67E19F2E4E7005CD2CF /* PreferencesDelegate.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = PreferencesDelegate.h; sourceTree = "<group>"; };
+		95B6A67F19F2E4E7005CD2CF /* PreferencesDelegate.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = PreferencesDelegate.m; sourceTree = "<group>"; };
+		95B6A68119F2E4E7005CD2CF /* Images.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Images.xcassets; sourceTree = "<group>"; };
+		95B6A68419F2E4E7005CD2CF /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/Preferences.xib; sourceTree = "<group>"; };
+		95B6A69819F2F724005CD2CF /* UserDefaults.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = UserDefaults.plist; path = hSKKPreferences/UserDefaults.plist; sourceTree = "<group>"; };
 		95F1BC0A19DA773C000B286C /* hiragana.tiff */ = {isa = PBXFileReference; lastKnownFileType = image.tiff; name = hiragana.tiff; path = hSKK/hiragana.tiff; sourceTree = "<group>"; };
 		95F1BC0D19DA7832000B286C /* katakana.tiff */ = {isa = PBXFileReference; lastKnownFileType = image.tiff; path = katakana.tiff; sourceTree = "<group>"; };
 		95F1BC0F19DA7994000B286C /* hankaku.tiff */ = {isa = PBXFileReference; lastKnownFileType = image.tiff; path = hankaku.tiff; sourceTree = "<group>"; };
@@ -65,7 +68,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		958EA57A19D1440B00B191A9 /* Frameworks */ = {
+		95B6A67519F2E4E7005CD2CF /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -78,9 +81,10 @@
 		958EA56119D1440B00B191A9 = {
 			isa = PBXGroup;
 			children = (
+				95B6A69819F2F724005CD2CF /* UserDefaults.plist */,
 				95F1BC0C19DA774F000B286C /* Pictures */,
 				958EA56C19D1440B00B191A9 /* hSKK */,
-				958EA58019D1440B00B191A9 /* hSKKTests */,
+				95B6A67919F2E4E7005CD2CF /* hSKKPreferences */,
 				958EA59B19D1535100B191A9 /* Frameworks */,
 				958EA56B19D1440B00B191A9 /* Products */,
 			);
@@ -90,7 +94,7 @@
 			isa = PBXGroup;
 			children = (
 				958EA56A19D1440B00B191A9 /* hSKK.app */,
-				958EA57D19D1440B00B191A9 /* hSKKTests.xctest */,
+				95B6A67819F2E4E7005CD2CF /* hSKKPreferences.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -109,27 +113,12 @@
 			isa = PBXGroup;
 			children = (
 				958EA56E19D1440B00B191A9 /* Info.plist */,
+				95B6A67119F2E2C6005CD2CF /* AppDelegate.h */,
+				95B6A67219F2E2C6005CD2CF /* AppDelegate.m */,
 				958EA58F19D1501200B191A9 /* HSKKController.h */,
 				958EA59019D1501200B191A9 /* HSKKController.m */,
 				958EA56F19D1440B00B191A9 /* main.m */,
 				95F1BC1319DA7EA9000B286C /* InfoPlist.strings */,
-			);
-			name = "Supporting Files";
-			sourceTree = "<group>";
-		};
-		958EA58019D1440B00B191A9 /* hSKKTests */ = {
-			isa = PBXGroup;
-			children = (
-				958EA58319D1440B00B191A9 /* hSKKTests.m */,
-				958EA58119D1440B00B191A9 /* Supporting Files */,
-			);
-			path = hSKKTests;
-			sourceTree = "<group>";
-		};
-		958EA58119D1440B00B191A9 /* Supporting Files */ = {
-			isa = PBXGroup;
-			children = (
-				958EA58219D1440B00B191A9 /* Info.plist */,
 			);
 			name = "Supporting Files";
 			sourceTree = "<group>";
@@ -159,6 +148,27 @@
 				958EA59E19D1539500B191A9 /* AppKit.framework */,
 			);
 			name = "Other Frameworks";
+			sourceTree = "<group>";
+		};
+		95B6A67919F2E4E7005CD2CF /* hSKKPreferences */ = {
+			isa = PBXGroup;
+			children = (
+				95B6A67E19F2E4E7005CD2CF /* PreferencesDelegate.h */,
+				95B6A67F19F2E4E7005CD2CF /* PreferencesDelegate.m */,
+				95B6A68119F2E4E7005CD2CF /* Images.xcassets */,
+				95B6A68319F2E4E7005CD2CF /* Preferences.xib */,
+				95B6A67A19F2E4E7005CD2CF /* Supporting Files */,
+			);
+			path = hSKKPreferences;
+			sourceTree = "<group>";
+		};
+		95B6A67A19F2E4E7005CD2CF /* Supporting Files */ = {
+			isa = PBXGroup;
+			children = (
+				95B6A67B19F2E4E7005CD2CF /* Info.plist */,
+				95B6A67C19F2E4E7005CD2CF /* main.m */,
+			);
+			name = "Supporting Files";
 			sourceTree = "<group>";
 		};
 		95F1BC0C19DA774F000B286C /* Pictures */ = {
@@ -193,23 +203,22 @@
 			productReference = 958EA56A19D1440B00B191A9 /* hSKK.app */;
 			productType = "com.apple.product-type.application";
 		};
-		958EA57C19D1440B00B191A9 /* hSKKTests */ = {
+		95B6A67719F2E4E7005CD2CF /* hSKKPreferences */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 958EA58A19D1440B00B191A9 /* Build configuration list for PBXNativeTarget "hSKKTests" */;
+			buildConfigurationList = 95B6A69219F2E4E7005CD2CF /* Build configuration list for PBXNativeTarget "hSKKPreferences" */;
 			buildPhases = (
-				958EA57919D1440B00B191A9 /* Sources */,
-				958EA57A19D1440B00B191A9 /* Frameworks */,
-				958EA57B19D1440B00B191A9 /* Resources */,
+				95B6A67419F2E4E7005CD2CF /* Sources */,
+				95B6A67519F2E4E7005CD2CF /* Frameworks */,
+				95B6A67619F2E4E7005CD2CF /* Resources */,
 			);
 			buildRules = (
 			);
 			dependencies = (
-				958EA57F19D1440B00B191A9 /* PBXTargetDependency */,
 			);
-			name = hSKKTests;
-			productName = hSKKTests;
-			productReference = 958EA57D19D1440B00B191A9 /* hSKKTests.xctest */;
-			productType = "com.apple.product-type.bundle.unit-test";
+			name = hSKKPreferences;
+			productName = hSKKPreferences;
+			productReference = 95B6A67819F2E4E7005CD2CF /* hSKKPreferences.app */;
+			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
 
@@ -223,9 +232,8 @@
 					958EA56919D1440B00B191A9 = {
 						CreatedOnToolsVersion = 6.0.1;
 					};
-					958EA57C19D1440B00B191A9 = {
+					95B6A67719F2E4E7005CD2CF = {
 						CreatedOnToolsVersion = 6.0.1;
-						TestTargetID = 958EA56919D1440B00B191A9;
 					};
 				};
 			};
@@ -243,7 +251,7 @@
 			projectRoot = "";
 			targets = (
 				958EA56919D1440B00B191A9 /* hSKK */,
-				958EA57C19D1440B00B191A9 /* hSKKTests */,
+				95B6A67719F2E4E7005CD2CF /* hSKKPreferences */,
 			);
 		};
 /* End PBXProject section */
@@ -260,14 +268,18 @@
 				958EA57519D1440B00B191A9 /* Images.xcassets in Resources */,
 				958EA57819D1440B00B191A9 /* MainMenu.xib in Resources */,
 				958EA58E19D14EB800B191A9 /* icon-03.tiff in Resources */,
+				95B6A69919F2F724005CD2CF /* UserDefaults.plist in Resources */,
 				95F1BC0B19DA773C000B286C /* hiragana.tiff in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		958EA57B19D1440B00B191A9 /* Resources */ = {
+		95B6A67619F2E4E7005CD2CF /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				95B6A68219F2E4E7005CD2CF /* Images.xcassets in Resources */,
+				95B6A69A19F2F724005CD2CF /* UserDefaults.plist in Resources */,
+				95B6A68519F2E4E7005CD2CF /* Preferences.xib in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -280,26 +292,20 @@
 			files = (
 				958EA59119D1501200B191A9 /* HSKKController.m in Sources */,
 				958EA57019D1440B00B191A9 /* main.m in Sources */,
+				95B6A67319F2E2C6005CD2CF /* AppDelegate.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		958EA57919D1440B00B191A9 /* Sources */ = {
+		95B6A67419F2E4E7005CD2CF /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				958EA58419D1440B00B191A9 /* hSKKTests.m in Sources */,
+				95B6A68019F2E4E7005CD2CF /* PreferencesDelegate.m in Sources */,
+				95B6A67D19F2E4E7005CD2CF /* main.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
-
-/* Begin PBXTargetDependency section */
-		958EA57F19D1440B00B191A9 /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = 958EA56919D1440B00B191A9 /* hSKK */;
-			targetProxy = 958EA57E19D1440B00B191A9 /* PBXContainerItemProxy */;
-		};
-/* End PBXTargetDependency section */
 
 /* Begin PBXVariantGroup section */
 		958EA57619D1440B00B191A9 /* MainMenu.xib */ = {
@@ -308,6 +314,14 @@
 				958EA57719D1440B00B191A9 /* Base */,
 			);
 			name = MainMenu.xib;
+			sourceTree = "<group>";
+		};
+		95B6A68319F2E4E7005CD2CF /* Preferences.xib */ = {
+			isa = PBXVariantGroup;
+			children = (
+				95B6A68419F2E4E7005CD2CF /* Base */,
+			);
+			name = Preferences.xib;
 			sourceTree = "<group>";
 		};
 /* End PBXVariantGroup section */
@@ -421,39 +435,31 @@
 			};
 			name = Release;
 		};
-		958EA58B19D1440B00B191A9 /* Debug */ = {
+		95B6A69319F2E4E7005CD2CF /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				BUNDLE_LOADER = "$(TEST_HOST)";
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				COMBINE_HIDPI_IMAGES = YES;
-				FRAMEWORK_SEARCH_PATHS = (
-					"$(DEVELOPER_FRAMEWORKS_DIR)",
-					"$(inherited)",
-				);
 				GCC_PREPROCESSOR_DEFINITIONS = (
 					"DEBUG=1",
 					"$(inherited)",
 				);
-				INFOPLIST_FILE = hSKKTests/Info.plist;
-				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks @loader_path/../Frameworks";
+				INFOPLIST_FILE = hSKKPreferences/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/hSKK.app/Contents/MacOS/hSKK";
 			};
 			name = Debug;
 		};
-		958EA58C19D1440B00B191A9 /* Release */ = {
+		95B6A69419F2E4E7005CD2CF /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				BUNDLE_LOADER = "$(TEST_HOST)";
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				COMBINE_HIDPI_IMAGES = YES;
-				FRAMEWORK_SEARCH_PATHS = (
-					"$(DEVELOPER_FRAMEWORKS_DIR)",
-					"$(inherited)",
-				);
-				INFOPLIST_FILE = hSKKTests/Info.plist;
-				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks @loader_path/../Frameworks";
+				INFOPLIST_FILE = hSKKPreferences/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/hSKK.app/Contents/MacOS/hSKK";
 			};
 			name = Release;
 		};
@@ -478,14 +484,13 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		958EA58A19D1440B00B191A9 /* Build configuration list for PBXNativeTarget "hSKKTests" */ = {
+		95B6A69219F2E4E7005CD2CF /* Build configuration list for PBXNativeTarget "hSKKPreferences" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				958EA58B19D1440B00B191A9 /* Debug */,
-				958EA58C19D1440B00B191A9 /* Release */,
+				95B6A69319F2E4E7005CD2CF /* Debug */,
+				95B6A69419F2E4E7005CD2CF /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
 	};

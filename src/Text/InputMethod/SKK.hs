@@ -1,8 +1,9 @@
-{-# LANGUAGE DataKinds, DeriveDataTypeable, FlexibleContexts               #-}
-{-# LANGUAGE FlexibleInstances, GADTs, LambdaCase, LiberalTypeSynonyms     #-}
-{-# LANGUAGE MultiParamTypeClasses, MultiWayIf, NoMonomorphismRestriction  #-}
-{-# LANGUAGE OverloadedStrings, PatternGuards, PatternSynonyms, RankNTypes #-}
-{-# LANGUAGE TemplateHaskell, TypeFamilies, TypeOperators, ViewPatterns    #-}
+{-# LANGUAGE DataKinds, DeriveDataTypeable, FlexibleContexts             #-}
+{-# LANGUAGE FlexibleInstances, GADTs, ImpredicativeTypes, LambdaCase    #-}
+{-# LANGUAGE LiberalTypeSynonyms, MultiParamTypeClasses, MultiWayIf      #-}
+{-# LANGUAGE NoMonomorphismRestriction, OverloadedStrings, PatternGuards #-}
+{-# LANGUAGE PatternSynonyms, RankNTypes, TemplateHaskell, TypeFamilies  #-}
+{-# LANGUAGE TypeOperators, ViewPatterns                                 #-}
 module Text.InputMethod.SKK
        (module Text.InputMethod.SKK.Dictionary,
         toInput, parseDictionary, SKKCommand(..),
@@ -19,7 +20,7 @@ module Text.InputMethod.SKK
         _Converting, _Okuri, _ConvFound, _ConvNotFound,
         _Incoming, _Backspace, _Convert, _ToggleHankaku,
         _Undo, _Finish, _Complete, _ToggleKana,
-        _CurrentState, _Refresh,
+        _CurrentState, _Refresh, paging, selectBy,
         defCSelector, defPager, isIdling, toggleKana
         ) where
 import Text.InputMethod.SKK.Dictionary
@@ -538,6 +539,12 @@ toKana mc = do
 
 defSKKConvE :: Event SKKCommand -> SignalGen (Event [SKKResult])
 defSKKConvE = skkConvE defKanaTable Hiragana (pure sDictionary)
+
+paging :: Int -> String -> Pager
+paging n args = splitAt n >>> map pure *** slice (length args) >>> uncurry (++)
+
+selectBy :: Eq a => [a] -> a -> [b] -> Maybe b
+selectBy args c cs = (cs ^?) . ix =<< elemIndex c args
 
 defPager :: Pager
 defPager = splitAt 4 >>> map pure *** slice 7 >>> uncurry (++)

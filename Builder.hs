@@ -63,6 +63,7 @@ buildWith :: AppSetting -> Rules ()
 buildWith AppSetting {..} = do
   let dbs  = prefixing "-package-db" packDBs
       dest = app <.> "app"
+      pref = app ++ "Preferences" <.> "app"
       skeleton = build </> app <.> "app"
       exe = build </> app
       xcode = "xcode_proj" </> app </> app <.> "xcodeproj"
@@ -84,19 +85,28 @@ buildWith AppSetting {..} = do
 
   dest *> \out -> do
     putNormal "setting up for bundle..."
-    need [skeleton, exe]
+    need [skeleton, exe, build </> pref]
     remove <- doesDirectoryExist dest
     when remove $ removeFilesAfter dest ["//*"]
     () <- cmd "mv" "-f" skeleton out
     copyFile' exe (out </> "Contents" </> "MacOS" </> app)
+    () <- cmd "mkdir" (out </> "Contents" </> "SharedSupport")
+    () <- cmd "cp" "-r" ("xcode_proj" </> app </> "build/Release" </> pref)
+      (out </> "Contents" </> "SharedSupport" </> pref)
     copyFile' ("data/AppIcon.icns") (out </> "Contents" </> "Resources" </> "AppIcon.icns")
     putNormal "Application bundle successfully compiled."
+
+  build </> pref *> \out -> do
+    need [xcode]
+    putNormal "compiling xcodeproj..."
+    () <- cmd "xcodebuild -project" xcode "-target" (app ++ "Preferences")
+    cmd "cp" "-r" ("xcode_proj" </> app </> "build/Release" </> app <.> "app") out
 
   build </> app <.> "app" *> \out -> do
     need [xcode]
     putNormal "compiling xcodeproj..."
-    () <- cmd "xcodebuild -project" xcode
-    cmd "mv" "-f" ("xcode_proj" </> app </> "build/Release" </> app <.> "app") out
+    () <- cmd "xcodebuild -project" xcode "-target" app
+    cmd "cp" "-r" ("xcode_proj" </> app </> "build/Release" </> app <.> "app") out
 
   build </> app *> \out -> do
     hss0 <- getDirectoryFiles "cocoa" ["//*.hs"]

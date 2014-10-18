@@ -27,6 +27,12 @@ idMarshaller ''NSBundle
 defineClass "IMKServer" (Just ''NSObject)
 idMarshaller ''IMKServer
 
+defineClass "NSDictionary" (Just ''NSObject)
+idMarshaller ''NSDictionary
+
+defineClass "NSString" (Just ''NSObject)
+idMarshaller ''NSString
+
 mainBundle :: NSBundle
 mainBundle = unsafePerformIO $(objc [] $ Class ''NSBundle <: [cexp| [NSBundle mainBundle] |] )
 {-# NOINLINE mainBundle #-}
@@ -78,6 +84,14 @@ nsLog str = $(objc ['str :> ''String] $ void [cexp| NSLog(@"%@", str) |])
 
 main :: IO ()
 main = do
+  defaultsPath <- $(objc [] $ Class ''NSString <:
+                    [cexp| [[NSBundle mainBundle] pathForResource:@"UserDefaults"
+                            ofType:@"plist"] |])
+  dic <- $(objc ['defaultsPath :> Class ''NSString] $ Class ''NSDictionary <:
+                 [cexp| [NSDictionary dictionaryWithContentsOfFile:defaultsPath] |])
+  $(objc ['dic :> Class ''NSDictionary] $
+           void [cexp| [[NSUserDefaults standardUserDefaults] registerDefaults:dic] |])
+  $(objc [] $ void [cexp| [[NSUserDefaults standardUserDefaults] addSuiteNamed:@$string:(userDefaultName)] |] )
   ident <- mainBundle # bundleIdentifier
   nsLog $ "identifier: " ++ ident
   server <- serverWithNameBundleIdentifier connName ident
