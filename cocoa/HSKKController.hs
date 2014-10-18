@@ -20,6 +20,7 @@ import           Control.Lens           hiding (act, ( # ))
 import           Control.Lens.Extras    (is)
 import           Control.Monad          (forM, liftM, (<=<))
 import           Control.Monad          (when)
+import           Control.Monad          (unless)
 import           Control.Monad.IO.Class (MonadIO, liftIO)
 import           Control.Zipper         ((:>>), Top, focus, fromWithin)
 import           Control.Zipper         (leftward, rightward, zipper)
@@ -29,6 +30,7 @@ import           Data.IORef             (IORef, modifyIORef', newIORef)
 import           Data.IORef             (readIORef, writeIORef)
 import           Data.List              (find)
 import qualified Data.Map               as M
+import           Data.Maybe             (isJust)
 import           Data.Monoid            ((<>))
 import           Data.Reflection        (Given (..), give)
 import qualified Data.Text              as T
@@ -150,13 +152,6 @@ client = given ^. currentClient
 session :: Given Environment => Session
 session = given ^. currentSession
 
-displayMarkedText :: (Given Environment, MonadIO m)
-                 => MarkedText -> m ()
-displayMarkedText (Marked txt)
-  = sender # setMarkedText (T.unpack txt) 0 (T.length txt)
-displayMarkedText (Normal txt)
-  = sender # insertText (T.unpack txt)
-
 instance Show ClientState where
   showsPrec d (Composing _ mode _) =
     showParen (d > 10) $ showString "Composing " . showsPrec 11 mode
@@ -215,7 +210,7 @@ resetClient :: (EffectLift IO l,
                 EffectState ClientState l, Given Environment)
             => Effect l ()
 resetClient = do
-  sender # setMarkedText "" 0 0
+  clearMark
   put =<< newClientState
 
 newPusher :: KanaTable -> ConvMode -> IORef Dictionary
@@ -231,7 +226,8 @@ newPusher table kana dicR = do
   let push inp = do
         triggerExternalEvent eev inp
         ans <- step
-        writeIORef isIn $ maybe True isIdling $ ans ^? _last
+        unless (inp == CurrentState) $
+          writeIORef isIn $ maybe True isIdling $ ans ^? _last
         return  ans
   return (push, isIn)
 
@@ -338,20 +334,18 @@ inputText sess0 cl input keyCode flags =
                    old <- registerBuf <<%= initT
                    when (T.null old) $ const () <$> continueWith Nothing
                    relayCurrentState
-                 | otherwise -> nsLog ("ordinary del: " ++ show cst) >> pushKey Backspace
-               Just (isNewline -> True) ->
+                 | otherwise -> pushKey Backspace
+               Just (isNewline -> True) -> do
                  if (cst & is _Registering) && idle
-                 then do
-                   let cont = cst ^?! continue
-                   buf <- use registerBuf
-                   if T.null buf
-                   then cont Nothing
-                   else cont $ Just buf
-                 else pushKey Finish
+                   then do
+                     let cont = cst ^?! continue
+                     buf <- use registerBuf
+                     if T.null buf
+                     then cont Nothing
+                     else cont $ Just buf
+                   else pushKey Finish
                Just Tab    -> pushKey Complete
-               Just Space | idle -> if cst & is _Registering
-                                    then relay []
-                                    else pushKey $ Incoming ' '
+               Just Space | idle -> pushKey $ Incoming ' '
                           | otherwise -> pushKey Convert
                Just (Char 'q') | all (compatible Control) modifs && not (null modifs) ->
                  if idle && mode /= Ascii
@@ -407,7 +401,6 @@ doSelection ch key modifs = do
             relayCurrentState
           Nothing -> startRegistration body mok
      | Just Delete == key || null modifs && ch == 'x' -> do
-        nsLog $ "Delete or x hit in Sel"
         case z & leftward of
           Just pg -> do
             selection .= pg
@@ -421,7 +414,7 @@ doSelection ch key modifs = do
                             ,"を削除しますか？(yes/no) "]
          showAsMarked msg
          answer <- suspend $ Inquiry msg
-         showAsMarked ""
+         clearMark
          if answer == Just "yes"
            then do
              let dicR = session ^. skkDic
@@ -441,7 +434,19 @@ doSelection ch key modifs = do
      | otherwise -> return True
 
 showAsMarked :: (MonadIO m, Given Environment) => T.Text -> m ()
-showAsMarked txt = sender # setMarkedText (T.unpack txt) 0 (T.length txt)
+showAsMarked txt = do
+  sender # setMarkedText "" 0 0
+  sender # setMarkedText (T.unpack txt) 0 (T.length txt)
+
+displayMarkedText :: (Given Environment, MonadIO m)
+                 => MarkedText -> m ()
+displayMarkedText (Marked txt)
+  = showAsMarked txt
+displayMarkedText (Normal txt)
+  = sender # insertText (T.unpack txt)
+
+clearMark :: (MonadIO m, Given Environment) => m ()
+clearMark = showAsMarked ""
 
 finishSelection :: Given Environment => Maybe T.Text -> ClientMachine Bool
 finishSelection mtxt = get >>= \case
@@ -478,16 +483,19 @@ pushKey input = do
   if nogo
     then return False
     else do
+    mbuf <- gets (^? registerBuf)
     push <- (^?! pushCmd) <$> get
     old <- liftIO $ push CurrentState
     ans <- liftIO $ push input
     let accepted = (input & is _Incoming)
                    || all (noneOf (_Idle.traverse) (is _NoHit)) ans
-                   || Backspace == input && any (is _Converting) old
+                   || anyOf (traverse._Idle.traverse) (is _InProgress) ans
+                   || Backspace == input && anyOf (traverse._Idle.traverse) (isn't _NoHit) ans
+                   || isJust mbuf
+    cur <- get
     ((), buf0) <- runWriter $ mapM_ (extractTxt $ input ^? _Incoming) ans
-    let buf | any (is _Converting) old && null buf0 = [Normal ""]
+    let buf | any (is _Converting) old && null buf0 = [Marked ""]
             | otherwise = buf0
-    nsLog $ concat ["pushKey(", show input, ", ", show old, ") = ", show (ans, accepted, buf0, buf)]
     if | Just (ConvNotFound mid mok) <- find (is _ConvNotFound) ans -> do
           startRegistration mid mok
        | Just (ConvFound body mokuri cands) <- find (is _ConvFound) ans -> do
@@ -499,7 +507,6 @@ pushKey input = do
             Just st -> sendCmd Refresh >> relay [Normal st]
             Nothing -> do
               cstttt <- get
-              nsLog $ "Selection canceled with state: " ++ show cstttt
               relayCurrentState >> return True
        | otherwise -> relay buf >> return accepted
 
@@ -559,20 +566,20 @@ relay xs = do
   cst <- get
   relayWith cst xs
 
+displayCurrentState :: Given Environment => ClientMachine ()
+displayCurrentState = mapM_ displayMarkedText =<< renderCurrentState
+
 relayWith :: Given Environment
           =>  ClientState -> [MarkedText] -> ClientMachine Bool
 relayWith cst [] = do
   case cst ^? continue of
      Nothing -> do
        resetClient
-       nsLog "rendering yay!"
-       showAsMarked ""
-       mapM_ displayMarkedText =<< renderCurrentState
+       displayCurrentState
        return True
      Just cont -> do
        cont Nothing
 relayWith cst0 mts = do
-  nsLog $ "relayincoming: " ++ show mts
   case cst0 of
     Asking msg buf0 _ -> do
       askBuf <>= T.concat [t | Normal t <- mts]
@@ -580,7 +587,7 @@ relayWith cst0 mts = do
       showAsMarked txt
       return True
     Composing {} -> do
-      showAsMarked ""
+      displayCurrentState
       liftM or $ forM (catMText mts) $ \case
         Marked txt -> do
           showAsMarked txt
@@ -595,7 +602,7 @@ relayWith cst0 mts = do
                 <> T.concat [txt | Marked txt <- mts]
       showAsMarked msg
       return True
-    Selecting _ _ _ _ _cont disp -> disp mts
+    Selecting _ _ _ _ _cont disp ->  disp mts
 
 unmark :: MarkedText -> T.Text
 unmark (Marked t) = t
@@ -630,7 +637,7 @@ plainExtractTxt Nothing NoHit = return ()
 commit :: Session -> NSObject -> IO ()
 commit sess sndr = do
   _ <- withSession' sess sndr $ do
-    sender # setMarkedText "" 0 0
+    clearMark
     a <- pushKey Finish
     resetClient
     return a

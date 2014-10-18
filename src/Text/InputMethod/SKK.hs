@@ -33,6 +33,7 @@ import           Control.Lens          (makeWrapped, to, traverse, use, uses)
 import           Control.Lens          (view, (%=), (&), (.=), (<%=), (<<>=))
 import           Control.Lens          ((<>=), (<?=), (?=), (^.), (^?), _2)
 import           Control.Lens          (_Just)
+import           Control.Lens          (isn't)
 import           Control.Lens.Extras   (is)
 import           Control.Monad         (unless)
 import           Control.Zipper        ((:>>), Top, focus, fromWithin, leftmost)
@@ -208,8 +209,8 @@ makePrisms ''SKKResult
 
 isIdling :: SKKResult -> Bool
 isIdling r =
-  or [anyOf (_Idle.each) (\a -> is _NoHit a || is _Converted a) r
-     ,r & is _Finished, r & is _ConvNotFound]
+  or [anyOf (_Idle.traverse) (isn't _InProgress) r
+     ,r & is _Finished, r & is _ConvNotFound, r & is _ConvFound]
 
 newSKKState :: SKKState
 newSKKState = SKKState Nothing Nothing Nothing False Nothing
