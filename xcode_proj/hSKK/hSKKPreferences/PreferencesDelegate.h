@@ -16,6 +16,8 @@
 @property (weak) IBOutlet NSTextField *inlineCountField;
 @property (weak) IBOutlet NSStepper *inlineCountStepper;
 @property (weak) IBOutlet NSTextField *candidateLabelField;
+@property (weak) IBOutlet NSButton *addButton;
+@property (weak) IBOutlet NSButton *removeButton;
 
 @end
 

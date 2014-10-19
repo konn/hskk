@@ -2,47 +2,59 @@
 {-# LANGUAGE StandaloneDeriving, TemplateHaskell                  #-}
 module Text.InputMethod.SKK.Dictionary
        (Dictionary(..), Input(..), Candidate(..),
-        gokan, okurigana, emptyDic, lookup, lookup',
-        tango, chushaku, okuri, subCands, dictionary,
+        gokan, okurigana, emptyDic, lookup,
+        tango, chushaku, dictionary, mergeDic,
         sDictionary, okuriAriDic, okuriNasiDic, insert, unregister,
-        formatDictionary, _Candidate, _OkuriSub, formatCandidate) where
+        formatDictionary, _Candidate, formatCandidate)
+       where
 import           Control.Applicative  ((*>), (<$), (<$>), (<*), (<*>), (<|>))
+import           Control.Arrow        ((***))
 import           Control.Lens
-import           Control.Lens.Extras  (is)
 import           Control.Monad        (guard)
 import           Data.Attoparsec.Text
-import           Data.Char            (isAlpha, isAscii, isLower, isSpace)
+import           Data.Char            (isSpace)
 import           Data.Data            (Data, Typeable)
+import           Data.Either          (partitionEithers)
 import           Data.Hashable
+import           Data.HashMap.Strict  (HashMap)
 import qualified Data.HashMap.Strict  as HM
-import           Data.List            (delete, sortBy)
+import           Data.List            (nub, sortBy)
 import           Data.List            (partition)
 import           Data.List            (find)
-import           Data.List            (nub)
+import qualified Data.List            as L
 import           Data.Maybe           (fromMaybe)
-import           Data.Maybe           (mapMaybe)
 import           Data.Monoid          ((<>))
 import           Data.Ord             (comparing)
+import           Data.String          (IsString (..))
 import qualified Data.Text            as T
 import           GHC.Generics         (Generic)
-import           Language.Haskell.TH
+import           Language.Haskell.TH  (litE, runIO, stringL)
 import           Prelude              hiding (lookup, takeWhile)
 
 data Input = Input { _gokan     :: T.Text
-                   , _okurigana :: Maybe Char
+                   , _okurigana :: Maybe (Char, Maybe T.Text)
                    } deriving (Read, Show, Eq, Ord,
                                Data, Typeable, Generic)
 data Candidate = Candidate { _tango    :: T.Text
                            , _chushaku :: T.Text
                            }
-               | OkuriSub { _okuri    :: T.Text
-                          , _subCands :: [Candidate]}
                deriving (Read, Show, Eq, Ord,
                          Data, Typeable, Generic)
 instance Hashable Input
+instance IsString Candidate where
+  fromString = flip Candidate "" . T.pack
 
-type AriDic = HM.HashMap (T.Text, Char) [Candidate]
-type NasiDic = HM.HashMap T.Text [Candidate]
+type Conditional = (T.Text, [Candidate])
+type Conditionals = HashMap T.Text [Candidate]
+
+data GuardedCandidates
+   = GuardedCandidates { _candidates   :: [Candidate]
+                       , _conditionals :: Conditionals
+                       } deriving (Show, Eq, Typeable, Data)
+
+type AriDic = HashMap (T.Text, Char) GuardedCandidates
+type NasiDic = HashMap T.Text [Candidate]
+
 
 data Dictionary = Dict { _okuriAriDic  :: AriDic
                        , _okuriNasiDic :: NasiDic
@@ -57,6 +69,7 @@ instance Hashable Candidate
 makeLenses ''Input
 
 makeLenses ''Dictionary
+makeLenses ''GuardedCandidates
 
 makeLenses ''Candidate
 makePrisms ''Candidate
@@ -64,56 +77,52 @@ makePrisms ''Candidate
 data Okuri = Ari | Nasi
            deriving (Read, Show, Eq, Ord)
 
+mergeDic :: Dictionary -> Dictionary -> Dictionary
+mergeDic d d' =
+  d' & okuriNasiDic %~ HM.unionWith unionCands (d ^. okuriNasiDic)
+     & okuriAriDic  %~ HM.unionWith mergeGCands (d ^. okuriAriDic)
+
 lookup :: Input -> Dictionary -> Maybe [Candidate]
 lookup (Input g Nothing) (Dict _ noDic) = HM.lookup g noDic
-lookup (Input g (Just o)) (Dict oDic _) = HM.lookup (g, o) oDic
-
-lookup' :: Input -> T.Text -> Dictionary -> Maybe [T.Text]
-lookup' i@(Input _ Nothing) _ d
-  = map (view tango) . filter (is _Candidate) <$> lookup i d
-lookup' i@(Input _ Just{}) t d =
-  case lookup i d of
-    Nothing -> Nothing
-    Just cands ->
-      let (subs, ords) = partition (is _OkuriSub) cands
-          mtargs = filter (is _Candidate) . view subCands <$>
-                   find ((== t) . view okuri) subs
-          targs = fromMaybe [] mtargs
-          ans = nub $ map (view tango) $ targs ++ ords
-      in if null ans then Nothing else Just ans
+lookup (Input g (Just (o, Nothing))) (Dict oDic _)
+  = view  candidates <$> HM.lookup (g, o) oDic
+lookup (Input g (Just (o, Just txt))) (Dict oDic _)
+  = HM.lookup (g, o) oDic <&> \d ->
+      let biased = fromMaybe [] $ HM.lookup txt (d ^. conditionals)
+          css0   = d ^. candidates
+      in unionCands biased css0
 
 unregister :: Input -> T.Text -> Dictionary -> Dictionary
 unregister (Input g Nothing) txt =
-  okuriNasiDic . at g %~ maybe Nothing (ensureNonEmpty . mapMaybe (annihilate txt))
-unregister (Input g (Just ok)) txt =
-  okuriAriDic . ix (g, ok) %~ mapMaybe (annihilate txt)
+  okuriNasiDic . at g %~ maybe Nothing (ensureNonEmpty . filter ((/= txt) . view tango))
+unregister (Input g (Just (ok, mokb))) txt =
+  okuriAriDic . ix (g, ok) %~ annihilate txt mokb
 
 ensureNonEmpty :: [t] -> Maybe [t]
 ensureNonEmpty [] = Nothing
 ensureNonEmpty xs = Just xs
 
-annihilate :: T.Text -> Candidate -> Maybe Candidate
-annihilate txt c@(Candidate t _)
-  | txt == t = Nothing
-  | otherwise = Just c
-annihilate txt (OkuriSub ok cands) =
-  let subs = mapMaybe (annihilate txt) cands
-  in if null subs
-     then Nothing
-     else Just $ OkuriSub ok subs
+annihilate :: T.Text -> Maybe T.Text -> GuardedCandidates -> GuardedCandidates
+annihilate txt Nothing gcs =
+  gcs & candidates %~ L.filter ((/= txt) . view tango)
+      & conditionals . each %~ L.filter ((/= txt) . view tango)
+annihilate txt (Just ok) gcs =
+  gcs & conditionals . ix ok %~ L.filter ((/= txt) . view tango)
 
 insert :: Input -> Candidate -> Dictionary -> Dictionary
 insert (Input k Nothing) v d =
-  d & okuriNasiDic %~  HM.insertWith (\ [a] b -> a : delete a b) k [v]
-insert (Input k (Just o)) v d =
-  d & okuriAriDic %~ HM.insertWith (\ [a] b -> a : delete a b) (k, o) [v]
+  d & okuriNasiDic %~  HM.insertWith unionCands k [v]
+insert (Input k (Just (o, Nothing))) v d =
+  d & okuriAriDic %~ HM.insertWith mergeGCands (k, o)
+                     (GuardedCandidates [v] HM.empty)
+insert (Input k (Just (o, Just t))) v d =
+  d & okuriAriDic %~ HM.insertWith mergeGCands (k, o)
+                     (GuardedCandidates [v] $ HM.singleton t [v])
 
 formatInput :: Input -> T.Text
-formatInput (Input g mo) = g <> maybe "" T.singleton mo
+formatInput (Input g mo) = g <> maybe "" T.singleton (fst <$> mo)
 
 formatCandidate :: Candidate -> T.Text
-formatCandidate (OkuriSub ok subs) =
-  T.concat ["[", ok, formatCands subs, "]"]
 formatCandidate (Candidate wd "") = wd
 formatCandidate (Candidate wd n)
   = wd <> ";" <> n
@@ -125,16 +134,20 @@ formatDictionary :: Dictionary -> T.Text
 formatDictionary dic =
   T.unlines $
   ";; okuri-ari entries." :
-  [ formatInput (Input inp (Just o)) <> " " <> formatCands cands
+  [ formatInput (Input inp (Just (o, Nothing))) <> " " <> formatGCands cands
   | ((inp, o), cands) <- sortBy (comparing fst) $ HM.toList $ dic ^. okuriAriDic ]
   ++ "":
   ";; okuri-nasi entries." :
   [ formatInput (Input inp Nothing) <> " " <> formatCands cands
   | (inp, cands) <- sortBy (comparing fst) $ HM.toList $ dic ^. okuriNasiDic ]
 
+formatGCands :: GuardedCandidates -> T.Text
+formatGCands (GuardedCandidates cands gd)
+  | HM.null gd = formatCands cands
+  | otherwise  = formatCands cands <> T.intercalate "/" (map formatConditional $ HM.toList gd) <> "/"
 
-isOkuri :: Char -> Bool
-isOkuri c = isAlpha c && isLower c && isAscii c
+formatConditional :: Conditional -> T.Text
+formatConditional (ok, subs) = T.concat ["[", ok, formatCands subs, "]"]
 
 comment :: Parser ()
 comment = do
@@ -145,20 +158,27 @@ comment = do
 line :: Parser ()
 line = endOfLine <|> comment
 
-midashi :: Okuri -> Parser Input
-midashi Nasi = do
-  mid <- takeWhile1 (not . isSpace)
-  return $ Input mid Nothing
-midashi Ari =  do
-  mid <- takeWhile1 (not . isSpace)
-  return $ Input (T.init mid) (Just $ T.last mid)
+nasiMidashi :: Parser T.Text
+nasiMidashi = takeWhile1 (not . isSpace)
 
-entry :: Okuri -> Parser (Input, [Candidate])
-entry okr =
-  (,) <$> midashi okr <*  skipSpace <*> candidates
+ariMidashi :: Parser (T.Text, Char)
+ariMidashi =  do
+  mid <- takeWhile1 (not . isSpace)
+  return (T.init mid, T.last mid)
 
-candidates :: Parser [Candidate]
-candidates = slashed candidate
+nasiEntry :: Parser (T.Text, [Candidate])
+nasiEntry = (,) <$> nasiMidashi <*  skipSpace <*> candidatesP
+
+ariEntry:: Parser ((T.Text, Char), GuardedCandidates)
+ariEntry  = (,) <$> ariMidashi <*  skipSpace <*> gCands
+
+gCands :: Parser GuardedCandidates
+gCands =
+  uncurry GuardedCandidates . (nub *** HM.fromList) . partitionEithers
+  <$> slashedP (eitherP candidate (try conditional))
+
+candidatesP :: Parser [Candidate]
+candidatesP = nub <$> slashedP candidate
 
 converted :: Parser T.Text
 converted = do
@@ -169,18 +189,17 @@ converted = do
 note :: Parser T.Text
 note = takeWhile (`notElem` "\r\n/")
 
-slashed :: Parser a -> Parser [a]
-slashed p = char '/' *> p `sepBy1` char '/' <* char '/'
+slashedP :: Parser a -> Parser [a]
+slashedP p = char '/' *> p `sepBy1` char '/' <* char '/'
 
 candidate :: Parser Candidate
-candidate = try okuriCand
-        <|> simpleCandidate
+candidate = simpleCandidate
 
-okuriCand :: Parser Candidate
-okuriCand = OkuriSub <$  char '['
-                     <*> takeWhile1 (`notElem` ";/\r\n")
-                     <*> slashed simpleCandidate
-                     <*  char ']'
+conditional :: Parser Conditional
+conditional = (,) <$  char '['
+                  <*> takeWhile1 (`notElem` ";/\r\n")
+                  <*> (nub <$> slashedP simpleCandidate)
+                  <*  char ']'
 
 simpleCandidate :: Parser Candidate
 simpleCandidate = do { b <- peekChar
@@ -206,27 +225,43 @@ okuriAriPragma = Ari <$ string okuriAriStr <* endOfLine
 okuriNasiPragma :: Parser Okuri
 okuriNasiPragma = Nasi <$ string okuriNasiStr <* endOfLine
 
-okuriDic :: Parser (Okuri, [(Input, [Candidate])])
+okuriDic :: Parser (Either [(T.Text, [Candidate])] [((T.Text, Char), GuardedCandidates)])
 okuriDic = do
   okr <- okuriPragma
   skipMany line
-  ents <- entry okr `sepBy` skipMany line
-  return (okr, ents)
+  case okr of
+    Ari  -> Right <$> ariEntry  `sepBy` skipMany line
+    Nasi -> Left  <$> nasiEntry `sepBy` skipMany line
 
 dictionary :: Parser Dictionary
 dictionary = do
   skipMany line
   dics <- okuriDic `sepBy` skipMany line
   let nds = [ (top, cands)
-            | (Nasi, d) <- dics
-            , (Input top _, cands) <- d]
+            | Left d <- dics
+            , (top, cands) <- d]
       ods = [ ((top, ok), cands)
-            | (Ari, d) <- dics
-            , (Input top (Just ok), cands) <- d]
-      dic = Dict (HM.fromListWith (++) ods) (HM.fromListWith (++) nds)
+            | Right d <- dics
+            , ((top, ok), cands) <- d]
+      dic = Dict (HM.fromListWith mergeGCands ods) (HM.fromListWith unionCands nds)
   skipMany line
   endOfInput
   return dic
+
+mergeGCands :: GuardedCandidates -> GuardedCandidates -> GuardedCandidates
+mergeGCands a b = b & candidates   %~ unionCands (a ^. candidates)
+                    & conditionals %~ HM.unionWith unionCands (a ^. conditionals)
+
+unionCands :: [Candidate] -> [Candidate] -> [Candidate]
+unionCands cs ds = foldr insertCand ds cs
+
+insertCand :: Candidate -> [Candidate] -> [Candidate]
+insertCand c cs =
+  let (targs, rest) = partition ((== (c ^. tango)) . view tango) cs
+      mchu = find (not . T.null) $ map (view chushaku) targs
+      chu  | T.null (c ^. chushaku) = fromMaybe "" mchu
+           | otherwise = c ^. chushaku
+  in (c & chushaku .~ chu) : rest
 
 sDictionary :: Dictionary
 Right sDictionary = parseOnly dictionary $(litE . stringL . tail =<< runIO (readFile "data/SKK-JISYO.S"))

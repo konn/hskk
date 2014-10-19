@@ -38,3 +38,8 @@ userDicKey = "userDicPath"
 
 userDefaultName :: String
 userDefaultName = "group.konn-san.com.inputmethod.hSKK"
+
+miscDicKindKey :: String
+miscDicKindKey = "kind"
+miscDicLocationKey :: String
+miscDicLocationKey = "location"

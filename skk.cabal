@@ -82,7 +82,12 @@ Executable hSKK
                        zippers,
                        effin,
                        reflection,
-                       monad-loops
+                       monad-loops,
+                       directory,
+                       filepath,
+                       async,
+                       iconv,
+                       http-conduit
   Main-is:             Main.hs
   other-modules:       App,
                        AppDelegate,

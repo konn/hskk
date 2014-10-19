@@ -5,16 +5,14 @@
 	<key>userDicPath</key>
 	<string>~/Library/Application Support/hSKK/skk-jisyo.utf8</string>
 	<key>otherDics</key>
-	<dict>
-		<key>kind</key>
-		<array>
+	<array>
+		<dict>
+			<key>kind</key>
 			<integer>0</integer>
-		</array>
-		<key>location</key>
-		<array>
+			<key>location</key>
 			<string>SKK-JISYO.L</string>
-		</array>
-	</dict>
+		</dict>
+	</array>
 	<key>inlineCandidateCount</key>
 	<integer>4</integer>
 	<key>candidateLabel</key>

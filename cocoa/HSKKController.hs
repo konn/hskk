@@ -5,7 +5,7 @@
 {-# LANGUAGE QuasiQuotes, RankNTypes, RecursiveDo, StandaloneDeriving    #-}
 {-# LANGUAGE TemplateHaskell, TupleSections, TypeFamilies, TypeOperators #-}
 {-# LANGUAGE ViewPatterns                                                #-}
-{-# OPTIONS_GHC -fno-warn-unused-binds -fno-warn-orphans #-}
+{-# OPTIONS_GHC -fno-warn-unused-binds -fno-warn-orphans -fno-warn-type-defaults #-}
 module HSKKController ( objc_initialise ) where
 import Constants
 import KeyFlags
@@ -15,6 +15,8 @@ import Text.InputMethod.SKK
 
 import           Control.Applicative    ((<$>))
 import           Control.Arrow          (first)
+import           Control.Concurrent.STM (TVar, atomically, modifyTVar')
+import           Control.Concurrent.STM (newTVarIO, readTVarIO, writeTVar)
 import           Control.Effect
 import           Control.Exception      (SomeException (..), handle)
 import           Control.Lens           hiding (act, ( # ))
@@ -26,10 +28,7 @@ import qualified Control.Monad          as M
 import           Control.Monad.IO.Class (MonadIO, liftIO)
 import           Control.Zipper         ((:>>), Top, focus, fromWithin)
 import           Control.Zipper         (leftward, rightward, zipper)
-import           Data.Char              (isControl)
-import           Data.Char              (toLower)
-import           Data.IORef             (IORef, modifyIORef', newIORef)
-import           Data.IORef             (readIORef, writeIORef)
+import           Data.Char              (isControl, toLower)
 import           Data.List              (find)
 import qualified Data.Map               as M
 import           Data.Maybe             (isJust)
@@ -43,9 +42,12 @@ import           Language.C.Inline.ObjC
 import           Language.C.Quote.ObjC
 import           System.IO.Unsafe       (unsafePerformIO)
 
+default (Integer)
+
 objc_import ["<Cocoa/Cocoa.h>",
              "<InputMethodKit/InputMethodKit.h>",
-             "HsFFI.h"]
+             "HsFFI.h",
+             "AppDelegate_objc.h"]
 
 defineClass "NSObject"    Nothing
 idMarshaller ''NSObject
@@ -113,6 +115,16 @@ defineSelector newSelector { selector = "synchronize"
                            }
 
 
+defineClass "AppDelegate" (Just ''NSObject)
+idMarshaller ''AppDelegate
+
+defineSelector newSelector { selector = "skkDic"
+                           , reciever = (''AppDelegate, "app")
+                           , returnType = Just [t| TVar Dictionary |]
+                           , definition = [cexp| [app skkDic] |]
+                           }
+
+
 type ClientMachine = Effect (State ClientState :+
                              Coroutine Waiting (Maybe T.Text) :+
                              Lift IO :+ Nil)
@@ -140,13 +152,12 @@ type Continuation = Maybe T.Text -> ClientMachine Bool
 data MarkedText = Marked T.Text | Normal T.Text
                 deriving (Read, Show, Eq, Ord, Typeable)
 
-
 type Client = NSObject
 
-data Session = Session { _clientMap :: M.Map Client ClientState
-                       , _self      :: HSKKController
-                       , _convMode  :: ConvMode
-                       , _skkDic    :: IORef Dictionary
+data Session = Session { _clientMap   :: M.Map Client ClientState
+                       , _self        :: HSKKController
+                       , _convMode    :: ConvMode
+                       , _application :: AppDelegate
                        } deriving (Typeable)
 
 instance Show Session where
@@ -157,7 +168,7 @@ instance Show Session where
 
 data ClientState = Composing { _pushCmd    :: SKKCommand -> IO [SKKResult]
                              , _clientMode :: ConvMode
-                             , _idling     :: IORef Bool
+                             , _idling     :: TVar Bool
                              }
                  | Selecting { _clientMode    :: ConvMode
                              , _selection     :: Top :>> [[T.Text]] :>> [T.Text]
@@ -169,7 +180,7 @@ data ClientState = Composing { _pushCmd    :: SKKCommand -> IO [SKKResult]
                              }
                  | Registering { _pushCmd       :: SKKCommand -> IO [SKKResult]
                                , _clientMode    :: ConvMode
-                               , _idling        :: IORef Bool
+                               , _idling        :: TVar Bool
                                , _registerBuf   :: T.Text
                                , _registerGokan :: T.Text
                                , _registerOkuri :: Maybe T.Text
@@ -244,8 +255,8 @@ newClientState :: (Given Environment,
                    EffectLift IO l)
                => Effect l ClientState
 newClientState = do
-  let dic = session ^. skkDic
-      mode = session ^. convMode
+  dic <- session ^. application # skkDic
+  let mode = session ^. convMode
   (push, ref) <- liftIO $ newPusher defKanaTable mode dic
   return $ Composing push mode ref
 
@@ -256,21 +267,21 @@ resetClient = do
   clearMark
   put =<< newClientState
 
-newPusher :: KanaTable -> ConvMode -> IORef Dictionary
-          -> IO (SKKCommand -> IO [SKKResult], IORef Bool)
+newPusher :: KanaTable -> ConvMode -> TVar Dictionary
+          -> IO (SKKCommand -> IO [SKKResult], TVar Bool)
 newPusher table kana dicR = do
-  isIn <- newIORef True
+  isIn <- newTVarIO True
   eev <- newExternalEvent
   step <- start $ do
     input <- externalE eev
-    dicB <- externalB $ readIORef dicR
+    dicB <- externalB $ readTVarIO dicR
     ev <- skkConvE table kana dicB input
     return $ eventToBehavior (flattenE ev)
   let push inp = do
         triggerExternalEvent eev inp
         ans <- step
-        unless (inp == CurrentState) $ do
-          writeIORef isIn $ maybe True isIdling $ ans ^? _last
+        unless (inp == CurrentState) $ atomically $ do
+          writeTVar isIn $ maybe True isIdling $ ans ^? _last
         return  ans
   return (push, isIn)
 
@@ -305,7 +316,7 @@ handleIter iter = do
       return True
     Next cont (Registration body mok) -> do
       let mode = session ^. convMode
-          dic  = session ^. skkDic
+      dic <- session ^. application # skkDic
       (push, ref) <- liftIO $ newPusher defKanaTable mode dic
       let cst' = Registering push mode ref "" body mok
                              (handleIter <=< extend . extend .cont)
@@ -333,9 +344,8 @@ inputText sess0 cl input keyCode flags =
         push <- gets (^?! pushCmd)
         curState <- lift $ push CurrentState
         let convSelecting = any (is _ConvFound) curState
-        idle <- liftIO $ readIORef $ cst ^?! idling
+        idle <- liftIO $ readTVarIO $ cst ^?! idling
         let mode = session ^. convMode
-            dic  = session ^. skkDic
         if | null modifs && idle && input == "q" ->
               case mode of
                HankakuKatakana -> do
@@ -467,9 +477,9 @@ doSelection ch key modifs = do
          answer <- suspend $ Inquiry msg
          if answer == Just "yes"
            then do
-             let dicR = session ^. skkDic
-             liftIO $ modifyIORef' dicR $
-               unregister (Input body (fst <$> mok)) targ
+             dicR <- session ^. application # skkDic
+             liftIO $ atomically $ modifyTVar' dicR $
+               unregister (Input body (mok & _Just._2 .~ Nothing)) targ
              clearMark
              finishSelection $ Just ""
            else relayCurrentState >> return True
@@ -558,7 +568,14 @@ pushKey input = do
           discard $ relay [Marked msg]
           mans <- suspend $ Selection body (first toLower <$> mokuri) css keys
           case mans of
-            Just st -> sendCmd Refresh >> relay [Normal st]
+            Just st -> do
+              let mok = mokuri & _Just . _1 %~ toLower
+                               & _Just . _2 %~ Just
+              dic <- session ^. application # skkDic
+              liftIO $ atomically $ modifyTVar' dic $
+                insert (Input body mok) (Candidate st "")
+              discard $ sendCmd Refresh
+              relay [Normal st]
             Nothing -> do
               discard $ sendCmd Undo
               relayCurrentState
@@ -605,8 +622,9 @@ startRegistration mid mok = do
   st <- get
   case mans of
     Just str | not (T.null str) -> do
-      let dic = session ^. skkDic
-      liftIO $ modifyIORef' dic $ insert (Input mid (toLower . fst <$> mok)) $ Candidate str ""
+      dic <- session ^. application # skkDic
+      liftIO $ atomically $ modifyTVar' dic $
+        insert (Input mid (mok & _Just._2 %~ Just)) $ Candidate str ""
       let conv'd = str <> maybe "" snd mok
       discard $ sendCmd Refresh
       case st of
@@ -710,7 +728,10 @@ nsLog :: MonadIO m => String -> m ()
 nsLog msg = liftIO $(objc ['msg :> ''String] $ void [cexp| NSLog(@"%@", msg) |])
 
 newSession :: HSKKController -> IO Session
-newSession ctrl = Session M.empty ctrl Hiragana <$> newIORef sDictionary
+newSession ctrl = do
+  app <- $(objc [] $ Class ''AppDelegate <:
+           [cexp| [NSApp delegate] |])
+  return $ Session M.empty ctrl Hiragana app
 
 objc_implementation [ Typed 'inputText, Typed 'changeMode, Typed 'commit
                     , Typed 'newSession, Typed 'getCurrentMode]

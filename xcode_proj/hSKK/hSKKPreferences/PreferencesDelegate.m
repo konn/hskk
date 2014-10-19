@@ -34,7 +34,7 @@ NSString *kUserDefaultName = @"group.konn-san.com.inputmethod.hSKK";
 
 - (void)applicationWillBecomeActive:(NSNotification *)notification
 {
-    [[[NSUserDefaults alloc] initWithSuiteName:kUserDefaultName] synchronize];
+    [defaults synchronize];
     [self.window makeKeyAndOrderFront:nil];
 }
 
@@ -42,6 +42,8 @@ NSString *kUserDefaultName = @"group.konn-san.com.inputmethod.hSKK";
     NSString *defaultsPath = [[NSBundle mainBundle] pathForResource:@"UserDefaults"
                                                              ofType:@"plist"];
     NSDictionary *dic = [NSDictionary dictionaryWithContentsOfFile:defaultsPath];
+    NSArrayController *dictsCtrl = [[NSArrayController alloc]
+                                    initWithContent: [dic objectForKey:@"otherDicts"]];
 
     defaults = [[NSUserDefaults alloc] initWithSuiteName:kUserDefaultName];
     ctrl = [[NSUserDefaultsController alloc] initWithDefaults:defaults
@@ -49,6 +51,10 @@ NSString *kUserDefaultName = @"group.konn-san.com.inputmethod.hSKK";
     NSLog(@"initialized with: %@", [dic description]);
     [ctrl setAppliesImmediately:YES];
     
+    [dictsCtrl bind:@"contentArray" toObject:ctrl
+        withKeyPath:@"values.otherDicts"
+            options:@{@"NSHandlesContentAsCompoundValue": @YES,
+                      @"NSContinuouslyUpdatesValue": @YES}];
     [self.userDicField bind:@"value" toObject:ctrl
                 withKeyPath:@"values.userDicPath"
                     options:@{@"NSContinuouslyUpdatesValue": @YES}];
@@ -64,15 +70,29 @@ NSString *kUserDefaultName = @"group.konn-san.com.inputmethod.hSKK";
                          toObject:ctrl
                       withKeyPath:@"values.inlineCandidateCount"
                           options:@{@"NSContinuouslyUpdatesValue": @YES}];
-    [self.otherDicKindCol bind:@"selectedIndex"
-                      toObject:ctrl
-                   withKeyPath:@"values.otherDics.kind"
-                       options:@{@"NSContinuouslyUpdatesValue": @YES}];
+    [self.otherDicKindCol bind:@"selectedTag"
+                      toObject:dictsCtrl
+                   withKeyPath:@"arrangedObjects.kind"
+                       options:@{@"NSContinuouslyUpdatesValue": @YES,
+                                 @"NSAllowsEditingMultipleValuesSelection": @YES,
+                                 @"NSConditionallySetEditable": @YES,
+                                 @"NSCreatesSortDescriptor": @YES,
+                                 @"NSRaisesForNotApplicableKeys": @YES}];
     [self.otherDicsLocationCol bind:@"value"
-                           toObject:ctrl
-                        withKeyPath:@"values.otherDics.location"
-                            options:@{@"NSContinuouslyUpdatesValue": @YES}];
-    NSLog(@"Goooood morning!!!");
+                           toObject:dictsCtrl
+                        withKeyPath:@"arrangedObjects.location"
+                            options:@{@"NSContinuouslyUpdatesValue": @YES,
+                                      @"NSAllowsEditingMultipleValuesSelection": @YES,
+                                      @"NSConditionallySetEditable": @YES,
+                                      @"NSCreatesSortDescriptor": @YES,
+                                      @"NSRaisesForNotApplicableKeys": @YES}];
+    [self.removeButton bind:@"enabled"
+                   toObject:dictsCtrl withKeyPath:@"canRemove"
+                    options:@{@"NSContinuouslyUpdatesValue": @YES}];
+    [self.addButton setTarget:dictsCtrl];
+    [self.addButton setAction:@selector(add:)];
+    [self.removeButton setTarget:dictsCtrl];
+    [self.removeButton setAction:@selector(remove:)];
 }
 
 - (BOOL)applicationShouldTerminateAfterLastWindowClosed:(NSApplication*)sender {

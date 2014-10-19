@@ -88,7 +88,7 @@ toInput str
   | T.length str == 1
     = Input str Nothing
   | isAlpha (T.last str) && isAscii (T.last str)
-    = Input (T.init str) (Just $ T.last str)
+    = Input (T.init str) (Just (T.last str, Nothing))
   | otherwise =  Input str Nothing
 
 parseDictionary :: T.Text -> Either String Dictionary
@@ -344,8 +344,8 @@ skkConv0 Convert = do
         let okBuf = okBuf0 <> lo
         okuriState ?= (okCh, okBuf)
         body <- uses convBuf (fromMaybe "")
-        case lookup' (Input body $ Just $ toLower okCh) okBuf skkDic of
-          Just css -> convFound css
+        case lookup (Input body $ Just (toLower okCh, Just okBuf))  skkDic of
+          Just css -> convFound (map (view tango) css)
           Nothing -> notFound
 
 skkConv0 Backspace = do
