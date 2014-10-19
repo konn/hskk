@@ -10,6 +10,12 @@
 			<key>kind</key>
 			<integer>0</integer>
 			<key>location</key>
+			<string>SKK-JISYO.zipcode</string>
+		</dict>
+		<dict>
+			<key>kind</key>
+			<integer>0</integer>
+			<key>location</key>
 			<string>SKK-JISYO.L</string>
 		</dict>
 	</array>

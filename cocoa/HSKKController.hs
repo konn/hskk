@@ -8,6 +8,7 @@
 {-# OPTIONS_GHC -fno-warn-unused-binds -fno-warn-orphans -fno-warn-type-defaults #-}
 module HSKKController ( objc_initialise ) where
 import Constants
+import DataTypes
 import KeyFlags
 import Messaging
 
@@ -15,6 +16,7 @@ import Text.InputMethod.SKK
 
 import           Control.Applicative    ((<$>))
 import           Control.Arrow          (first)
+import           Control.Arrow          ((>>>))
 import           Control.Concurrent.STM (TVar, atomically, modifyTVar')
 import           Control.Concurrent.STM (newTVarIO, readTVarIO, writeTVar)
 import           Control.Effect
@@ -120,10 +122,9 @@ idMarshaller ''AppDelegate
 
 defineSelector newSelector { selector = "skkDic"
                            , reciever = (''AppDelegate, "app")
-                           , returnType = Just [t| TVar Dictionary |]
+                           , returnType = Just [t| TVar DictionarySet |]
                            , definition = [cexp| [app skkDic] |]
                            }
-
 
 type ClientMachine = Effect (State ClientState :+
                              Coroutine Waiting (Maybe T.Text) :+
@@ -267,14 +268,14 @@ resetClient = do
   clearMark
   put =<< newClientState
 
-newPusher :: KanaTable -> ConvMode -> TVar Dictionary
+newPusher :: KanaTable -> ConvMode -> TVar DictionarySet
           -> IO (SKKCommand -> IO [SKKResult], TVar Bool)
 newPusher table kana dicR = do
   isIn <- newTVarIO True
   eev <- newExternalEvent
   step <- start $ do
     input <- externalE eev
-    dicB <- externalB $ readTVarIO dicR
+    dicB <- externalB $ view mergedDic <$> readTVarIO dicR
     ev <- skkConvE table kana dicB input
     return $ eventToBehavior (flattenE ev)
   let push inp = do
@@ -479,7 +480,9 @@ doSelection ch key modifs = do
            then do
              dicR <- session ^. application # skkDic
              liftIO $ atomically $ modifyTVar' dicR $
-               unregister (Input body (mok & _Just._2 .~ Nothing)) targ
+               userDic %~ unregister (Input body (mok & _Just._2 .~ Nothing)) targ
+               >>>
+               mergedDic %~ unregister (Input body (mok & _Just._2 .~ Nothing)) targ
              clearMark
              finishSelection $ Just ""
            else relayCurrentState >> return True
@@ -573,7 +576,9 @@ pushKey input = do
                                & _Just . _2 %~ Just
               dic <- session ^. application # skkDic
               liftIO $ atomically $ modifyTVar' dic $
-                insert (Input body mok) (Candidate st "")
+                userDic   %~ insert (Input body mok) (Candidate st "")
+                >>>
+                mergedDic %~ insert (Input body mok) (Candidate st "")
               discard $ sendCmd Refresh
               relay [Normal st]
             Nothing -> do
@@ -624,7 +629,9 @@ startRegistration mid mok = do
     Just str | not (T.null str) -> do
       dic <- session ^. application # skkDic
       liftIO $ atomically $ modifyTVar' dic $
-        insert (Input mid (mok & _Just._2 %~ Just)) $ Candidate str ""
+        userDic %~ insert (Input mid (mok & _Just._2 %~ Just)) (Candidate str "")
+        >>>
+        mergedDic %~ insert (Input mid (mok & _Just._2 %~ Just)) (Candidate str "")
       let conv'd = str <> maybe "" snd mok
       discard $ sendCmd Refresh
       case st of

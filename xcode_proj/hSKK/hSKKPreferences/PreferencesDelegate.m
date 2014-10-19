@@ -43,16 +43,15 @@ NSString *kUserDefaultName = @"group.konn-san.com.inputmethod.hSKK";
                                                              ofType:@"plist"];
     NSDictionary *dic = [NSDictionary dictionaryWithContentsOfFile:defaultsPath];
     NSArrayController *dictsCtrl = [[NSArrayController alloc]
-                                    initWithContent: [dic objectForKey:@"otherDicts"]];
+                                    initWithContent: [dic objectForKey:@"otherDics"]];
 
     defaults = [[NSUserDefaults alloc] initWithSuiteName:kUserDefaultName];
     ctrl = [[NSUserDefaultsController alloc] initWithDefaults:defaults
                                                 initialValues:dic];
-    NSLog(@"initialized with: %@", [dic description]);
     [ctrl setAppliesImmediately:YES];
     
     [dictsCtrl bind:@"contentArray" toObject:ctrl
-        withKeyPath:@"values.otherDicts"
+        withKeyPath:@"values.otherDics"
             options:@{@"NSHandlesContentAsCompoundValue": @YES,
                       @"NSContinuouslyUpdatesValue": @YES}];
     [self.userDicField bind:@"value" toObject:ctrl
@@ -70,7 +69,7 @@ NSString *kUserDefaultName = @"group.konn-san.com.inputmethod.hSKK";
                          toObject:ctrl
                       withKeyPath:@"values.inlineCandidateCount"
                           options:@{@"NSContinuouslyUpdatesValue": @YES}];
-    [self.otherDicKindCol bind:@"selectedTag"
+    [self.otherDicKindCol bind:@"selectedIndex"
                       toObject:dictsCtrl
                    withKeyPath:@"arrangedObjects.kind"
                        options:@{@"NSContinuouslyUpdatesValue": @YES,

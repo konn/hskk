@@ -27,6 +27,9 @@ katakanaModeKey = "com.apple.inputmethod.Japanese.Katakana"
 hankakuModeKey  = "com.apple.inputmethod.Japanese.HalfWidthKana"
 asciiModeKey = "com.apple.inputmethod.Roman"
 
+otherDicsKey :: String
+otherDicsKey = "otherDics"
+
 inlineCountKey :: String
 inlineCountKey = "inlineCandidateCount"
 
@@ -41,5 +44,6 @@ userDefaultName = "group.konn-san.com.inputmethod.hSKK"
 
 miscDicKindKey :: String
 miscDicKindKey = "kind"
+
 miscDicLocationKey :: String
 miscDicLocationKey = "location"
