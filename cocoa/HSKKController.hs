@@ -12,7 +12,7 @@ import DataTypes
 import KeyFlags
 import Messaging
 
-import Text.InputMethod.SKK
+import Text.InputMethod.SKK hiding (unregister)
 
 import           Control.Applicative    ((<$>))
 import           Control.Arrow          (first)
@@ -122,8 +122,20 @@ idMarshaller ''AppDelegate
 
 defineSelector newSelector { selector = "skkDic"
                            , reciever = (''AppDelegate, "app")
-                           , returnType = Just [t| TVar DictionarySet |]
+                           , returnType = Just [t| Dictionary |]
                            , definition = [cexp| [app skkDic] |]
+                           }
+
+defineSelector newSelector { selector = "register"
+                           , reciever = (''AppDelegate, "app")
+                           , arguments  = [ "input" :>>: ''Input, "cand" :>>: ''Candidate]
+                           , definition = [cexp| [app registerCandidate: cand forInput: input ] |]
+                           }
+
+defineSelector newSelector { selector = "unregister"
+                           , reciever = (''AppDelegate, "app")
+                           , arguments  = [ "input" :>>: ''Input, "cand" :>>: ''T.Text]
+                           , definition = [cexp| [app unregisterCandidate: cand forInput: input ] |]
                            }
 
 type ClientMachine = Effect (State ClientState :+
@@ -256,9 +268,8 @@ newClientState :: (Given Environment,
                    EffectLift IO l)
                => Effect l ClientState
 newClientState = do
-  dic <- session ^. application # skkDic
   let mode = session ^. convMode
-  (push, ref) <- liftIO $ newPusher defKanaTable mode dic
+  (push, ref) <- liftIO $ newPusher defKanaTable mode
   return $ Composing push mode ref
 
 resetClient :: (EffectLift IO l,
@@ -268,14 +279,15 @@ resetClient = do
   clearMark
   put =<< newClientState
 
-newPusher :: KanaTable -> ConvMode -> TVar DictionarySet
+newPusher :: (Given Environment)
+          => KanaTable -> ConvMode
           -> IO (SKKCommand -> IO [SKKResult], TVar Bool)
-newPusher table kana dicR = do
+newPusher table kana = do
   isIn <- newTVarIO True
   eev <- newExternalEvent
   step <- start $ do
     input <- externalE eev
-    dicB <- externalB $ view mergedDic <$> readTVarIO dicR
+    dicB <- externalB $ session ^. application # skkDic
     ev <- skkConvE table kana dicB input
     return $ eventToBehavior (flattenE ev)
   let push inp = do
@@ -317,8 +329,7 @@ handleIter iter = do
       return True
     Next cont (Registration body mok) -> do
       let mode = session ^. convMode
-      dic <- session ^. application # skkDic
-      (push, ref) <- liftIO $ newPusher defKanaTable mode dic
+      (push, ref) <- liftIO $ newPusher defKanaTable mode
       let cst' = Registering push mode ref "" body mok
                              (handleIter <=< extend . extend .cont)
       put cst'
@@ -478,11 +489,7 @@ doSelection ch key modifs = do
          answer <- suspend $ Inquiry msg
          if answer == Just "yes"
            then do
-             dicR <- session ^. application # skkDic
-             liftIO $ atomically $ modifyTVar' dicR $
-               userDic %~ unregister (Input body (mok & _Just._2 .~ Nothing)) targ
-               >>>
-               mergedDic %~ unregister (Input body (mok & _Just._2 .~ Nothing)) targ
+             session ^. application # unregister (Input body (mok & _Just._2 .~ Nothing)) targ
              clearMark
              finishSelection $ Just ""
            else relayCurrentState >> return True
@@ -574,11 +581,7 @@ pushKey input = do
             Just st -> do
               let mok = mokuri & _Just . _1 %~ toLower
                                & _Just . _2 %~ Just
-              dic <- session ^. application # skkDic
-              liftIO $ atomically $ modifyTVar' dic $
-                userDic   %~ insert (Input body mok) (Candidate st "")
-                >>>
-                mergedDic %~ insert (Input body mok) (Candidate st "")
+              session ^. application # register (Input body mok) (Candidate st "")
               discard $ sendCmd Refresh
               relay [Normal st]
             Nothing -> do
@@ -627,11 +630,7 @@ startRegistration mid mok = do
   st <- get
   case mans of
     Just str | not (T.null str) -> do
-      dic <- session ^. application # skkDic
-      liftIO $ atomically $ modifyTVar' dic $
-        userDic %~ insert (Input mid (mok & _Just._2 %~ Just)) (Candidate str "")
-        >>>
-        mergedDic %~ insert (Input mid (mok & _Just._2 %~ Just)) (Candidate str "")
+      session ^. application # register (Input mid (mok & _Just._2 %~ Just)) (Candidate str "")
       let conv'd = str <> maybe "" snd mok
       discard $ sendCmd Refresh
       case st of
@@ -780,7 +779,7 @@ objc_implementation [ Typed 'inputText, Typed 'changeMode, Typed 'commit
 
 - (typename NSMenu *)menu
 {
-  return [[NSApp delegate] menu];
+  return [(typename AppDelegate *)[NSApp delegate] menu];
 }
 
 - (void)showPreferences:(id)sender {

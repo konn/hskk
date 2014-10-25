@@ -83,10 +83,13 @@ mergeDic d d' =
      & okuriAriDic  %~ HM.unionWith mergeGCands (d ^. okuriAriDic)
 
 lookup :: Input -> Dictionary -> Maybe [Candidate]
-lookup (Input g Nothing) (Dict _ noDic) = HM.lookup g noDic
-lookup (Input g (Just (o, Nothing))) (Dict oDic _)
+lookup inp dic = filter (not . T.null . view tango) <$> lookup0 inp dic
+
+lookup0 :: Input -> Dictionary -> Maybe [Candidate]
+lookup0 (Input g Nothing) (Dict _ noDic) = HM.lookup g noDic
+lookup0 (Input g (Just (o, Nothing))) (Dict oDic _)
   = view  candidates <$> HM.lookup (g, o) oDic
-lookup (Input g (Just (o, Just txt))) (Dict oDic _)
+lookup0 (Input g (Just (o, Just txt))) (Dict oDic _)
   = HM.lookup (g, o) oDic <&> \d ->
       let biased = fromMaybe [] $ HM.lookup txt (d ^. conditionals)
           css0   = d ^. candidates

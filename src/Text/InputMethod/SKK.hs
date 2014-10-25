@@ -29,7 +29,7 @@ import Text.InputMethod.SKK.Misc
 import           Control.Applicative   (Applicative, pure, (<$>))
 import           Control.Arrow         (second, (***), (>>>))
 import           Control.Effect        hiding (select, swap)
-import           Control.Lens          (anyOf, each, ix, makeLenses, makePrisms)
+import           Control.Lens          (anyOf, ix, makeLenses, makePrisms)
 import           Control.Lens          (makeWrapped, to, traverse, use, uses)
 import           Control.Lens          (view, (%=), (&), (.=), (<%=), (<<>=))
 import           Control.Lens          ((<>=), (<?=), (?=), (^.), (^?), _2)
@@ -339,14 +339,16 @@ skkConv0 Convert = do
                    lookup (Input body Nothing) skkDic
         case mcss of
           Nothing  -> notFound
+          Just []  -> notFound
           Just css -> convFound css
       Just (okCh, okBuf0) -> do -- Convert with Okurigana
         let okBuf = okBuf0 <> lo
         okuriState ?= (okCh, okBuf)
         body <- uses convBuf (fromMaybe "")
         case lookup (Input body $ Just (toLower okCh, Just okBuf))  skkDic of
-          Just css -> convFound (map (view tango) css)
           Nothing -> notFound
+          Just [] -> notFound
+          Just css -> convFound (map (view tango) css)
 
 skkConv0 Backspace = do
   convCands .= Nothing

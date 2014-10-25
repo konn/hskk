@@ -4,26 +4,41 @@
 {-# OPTIONS_GHC -fno-warn-type-defaults -fno-warn-orphans #-}
 module AppDelegate (objc_initialise) where
 import Constants
-import DataTypes
+-- import DataTypes
 import Messaging
 import Text.InputMethod.SKK
 
 import           Codec.Text.IConv         (Fuzzy (..), convertFuzzy)
 import           Control.Applicative      ((<$>))
+import           Control.Arrow            ((>>>))
 import           Control.Concurrent       (threadDelay)
 import           Control.Concurrent       (forkOS)
-import           Control.Concurrent.Async (Async, asyncBound, cancel)
-import           Control.Concurrent.STM   (TVar, atomically, newTVarIO)
-import           Control.Concurrent.STM   (readTVarIO, writeTVar)
+import           Control.Concurrent       (readMVar)
+import           Control.Concurrent       (newMVar)
+import           Control.Concurrent       (swapMVar)
+import           Control.Concurrent       (modifyMVar_)
+import           Control.Concurrent       (modifyMVar)
+import           Control.Concurrent.Async (Async, asyncBound, cancel, poll)
+import           Control.Concurrent.MVar  (MVar)
 import           Control.Exception        (SomeException (..), handle)
+import           Control.Exception        (throw)
+import           Control.Exception        (throwIO)
+import           Control.Exception        (evaluate)
 import           Control.Lens             hiding (act, ( # ))
+import           Control.Lens.Extras      (is)
 import           Control.Monad            (forM, forever, when)
 import           Control.Monad            (forM_)
+import           Control.Monad            (join)
+import           Control.Monad            ((<=<))
 import qualified Data.ByteString.Lazy     as LBS
+import           Data.Either              (lefts)
+import           Data.List                (partition)
 import           Data.Maybe               (mapMaybe)
+import           Data.Maybe               (fromJust)
 import qualified Data.Text                as T
 import qualified Data.Text.Encoding       as T
 import qualified Data.Text.IO             as T
+import           Data.Typeable            (Typeable)
 import           Language.C.Inline.ObjC
 import           Language.C.Quote.ObjC
 import           Network.HTTP.Conduit     (HttpException, simpleHttp)
@@ -34,6 +49,13 @@ import           System.FilePath          (joinPath, splitPath)
 objc_import ["Cocoa/Cocoa.h",
              "<InputMethodKit/InputMethodKit.h>",
              "HsFFI.h"]
+
+data AsyncDicSet = ADicSet { _udic   :: Dictionary
+                           , _adics  :: [Async Dictionary]
+                           , _merged :: Dictionary
+                           } deriving (Typeable)
+
+makeLenses ''AsyncDicSet
 
 defineClass "NSObject" Nothing
 idMarshaller ''NSObject
@@ -78,18 +100,34 @@ objc_interface [cunit|
 @property (assign) typename HsStablePtr session;
 
 -(typename HsStablePtr)skkDic;
+-(typename HsStablePtr)
+   registerCandidate: (typename HsStablePtr) cand
+            forInput:(typename HsStablePtr) input;
+-(typename HsStablePtr)
+   unregisterCandidate: (typename HsStablePtr) cand
+              forInput:(typename HsStablePtr) input;
 @end
 |]
 
 data Session = Session { _self         :: AppDelegate
                        , _saveThread   :: Async ()
                        , _reloadThread :: Async ()
-                       , _skkDic       :: TVar DictionarySet
+                       , _skkDic       :: MVar AsyncDicSet
                        }
 makeLenses ''Session
 
-viewDic :: Session -> IO (TVar DictionarySet)
-viewDic = return . view skkDic
+
+viewDic :: Session -> IO Dictionary
+viewDic sess =  modifyMVar (sess ^. skkDic) $ \dics -> do
+  lrs <- mapM poll (dics ^. adics)
+  let (done0, lo0) = partition (is (_Just._Right) . fst) $ zip lrs (dics ^. adics)
+      lo = map snd lo0
+      done = map (^?! _1._Just._Right) done0
+  if null done
+    then return (dics, dics ^. merged)
+    else do
+    let m' = foldl mergeDic (dics ^. merged) done
+    return (dics & adics .~ lo & merged .~ m', m')
 
 data DictKind = Remote | Local
               deriving (Read, Show, Eq, Ord)
@@ -121,8 +159,6 @@ miscDic2NSDict (MiscDict k loc) = do
       Class ''NSDictionary <: [cexp| @{@$string:(miscDicKindKey): [NSNumber numberWithInt: tag],
                                        @$string:(miscDicLocationKey): loc} |])
 
-fromNSString :: NSString -> IO String
-fromNSString str = $(objc ['str :> Class ''NSString] $ ''String <: [cexp| str |])
 
 nsDict2MiscDic :: NSDictionary -> IO MiscDict
 nsDict2MiscDic dic = do
@@ -159,41 +195,6 @@ array2ListOfMiscDict arr = do
 
 objc_marshaller 'listOfMiscDic2Array 'array2ListOfMiscDict
 
-{-
-dic2ListOfMiscDict :: NSDictionary -> IO [MiscDict]
-dic2ListOfMiscDict dic = do
-  inspect "dic" dic
-  kinds <- $(objc ['dic :> Class ''NSDictionary] $
-                  Class ''NSArray <: [cexp| [dic objectForKey: @$string:miscDicKindKey] |])
-  locs  <- $(objc ['dic :> Class ''NSDictionary] $
-                  Class ''NSArray <: [cexp| [dic objectForKey: @$string:miscDicLocationKey] |])
-  count <- $(objc ['kinds :> Class ''NSArray] $
-             ''Int <: [cexp| [kinds count] |])
-  forM [0..count - 1]$ \i -> do
-    t   <- $(objc ['kinds :> Class ''NSArray, 'i :> ''Int] $
-             ''Int <: [cexp| [[kinds objectAtIndex: i] intValue] |])
-    loc <- $(objc ['locs :> Class ''NSArray, 'i :> ''Int] $
-             ''String <: [cexp| [locs objectAtIndex: i] |])
-    return $ MiscDict (tag2Kind t) loc
-
-
-listOfMiscDict2Dic :: [MiscDict] -> IO NSDictionary
-listOfMiscDict2Dic mds = do
-  let count = length mds
-  locs  <- $(objc ['count :> ''Int] $ Class ''NSMutableArray <:
-             [cexp| [NSMutableArray arrayWithCapacity: count] |])
-  kinds <- $(objc ['count :> ''Int] $ Class ''NSMutableArray <:
-             [cexp| [NSMutableArray arrayWithCapacity: count] |])
-  forM_ mds $ \(MiscDict k l) -> do
-    let tag = kind2Tag k
-    $(objc ['locs :> Class ''NSMutableArray, 'l :> ''String] $ void [cexp| [locs addObject: l] |])
-    $(objc ['kinds :> Class ''NSMutableArray, 'tag :> ''Int] $ void [cexp| [kinds addObject: [NSNumber numberWithInt: tag]] |])
-  $(objc ['locs :> Class ''NSArray, 'kinds :> Class ''NSArray] $
-    Class ''NSDictionary
-    <: [cexp| @{ @$string:miscDicKindKey : kinds, @$string:miscDicLocationKey : locs} |])
-
-objc_marshaller 'listOfMiscDict2Dic 'dic2ListOfMiscDict
--}
 defineSelector newSelector { selector = "otherDicsConf"
                            , reciever = (''NSUserDefaults, "def")
                            , returnType = Just [t| [MiscDict] |]
@@ -209,27 +210,33 @@ getUserDicPath = do
 getDictConf :: IO DictConf
 getDictConf = do
   udef <- stdUserDefaults
-  udic <- getUserDicPath
+  ud <- getUserDicPath
   odic <- udef # otherDicsConf
-  return $ DictConf udic odic
+  return $ DictConf ud odic
 
-miscDics :: DictConf -> IO [Dictionary]
-miscDics conf = mapMaybe (^? _Right) <$> mapM getDic (conf ^. otherDicConfs)
+miscDics :: DictConf -> IO [Async Dictionary]
+miscDics conf = mapM getDic (conf ^. otherDicConfs)
 
-getDic :: MiscDict -> IO (Either String Dictionary)
-getDic (MiscDict k loc) = handle httpHandler $ do
+getDic :: MiscDict -> IO (Async Dictionary)
+getDic (MiscDict k loc) = asyncBound $ handle (httpHandler loc) $ do
   src <- case k of
     Local  -> T.readFile =<< expandHome loc
     Remote -> do
+      nsLog $ "Downloading Dictionary: "++ loc
       bs <- simpleHttp $ "http://openlab.ring.gr.jp/skk/skk/dic/" ++ loc
+      nsLog $ "Downloaded: "++ loc
       path <- expandHome $ "~/Library/Application Support/hSKK/" ++ loc
       let src = convertFuzzy Discard "EUC-JP" "UTF-8" bs
-      forkOS $ LBS.writeFile path src
+      LBS.writeFile path src
+      nsLog $ "Parsed: "++ loc
       return $ T.decodeUtf8 $ LBS.toStrict src
-  return $ parseDictionary src
+  either (throw . userError) return $ parseDictionary src
 
-httpHandler :: HttpException -> IO (Either String a)
-httpHandler exc = return $ Left $ show exc
+httpHandler :: String -> HttpException -> IO a
+httpHandler loc exc = do
+  nsLog $ "HTTP error during loading " ++ loc ++ ": " ++ show exc
+  throw exc
+
 
 expandHome :: FilePath -> IO FilePath
 expandHome path = joinPath <$>
@@ -237,12 +244,12 @@ expandHome path = joinPath <$>
     ("~/" : rest) -> getHomeDirectory <&> (:rest)
     xs -> return xs
 
-saveDictionary :: TVar DictionarySet -> IO ()
+saveDictionary :: MVar AsyncDicSet -> IO ()
 saveDictionary ref = handle handler $ do
-  dicSet <- readTVarIO ref
+  dicSet <- readMVar ref
   path <- getUserDicPath
   nsLog "saving dictionary..."
-  T.writeFile (path ++ ".rotate") $ formatDictionary (dicSet ^. userDic)
+  T.writeFile (path ++ ".rotate") $ formatDictionary (dicSet ^. udic)
   doRemove <- doesFileExist path
   when doRemove $ removeFile path
   renameFile (path ++ ".rotate") path
@@ -267,7 +274,7 @@ newSession app = do
            void [cexp| [udef registerDefaults:dic] |])
   udef # sync
   inspect "UserDefaults" =<< udef # toDict
-  dicRef <- newTVarIO =<< buildDicSet
+  dicRef <- newMVar =<< buildDicSet
   saver <- asyncBound $ forever $ do
     threadDelay (10*60*10^6)
     saveDictionary dicRef
@@ -275,10 +282,10 @@ newSession app = do
   reloader <- asyncBound $ forever $ do
     threadDelay (60*60*10^6)
     nsLog "reloading dictionaries..."
-    atomically . writeTVar dicRef =<< buildDicSet
+    swapMVar dicRef =<< buildDicSet
   return $ Session app saver reloader dicRef
 
-buildDicSet :: IO DictionarySet
+buildDicSet :: IO AsyncDicSet
 buildDicSet = do
   nsLog $ "building dics"
   conf <- getDictConf
@@ -292,7 +299,7 @@ buildDicSet = do
       T.writeFile path $ formatDictionary sDictionary
       return sDictionary
   others <- miscDics conf
-  return $ DictionarySet dic (foldr1 mergeDic (dic:others))
+  return $ ADicSet dic others dic
 
 finalize :: Session -> IO ()
 finalize sess = do
@@ -300,11 +307,28 @@ finalize sess = do
   cancel (sess ^. reloadThread)
   saveDictionary $ sess ^. skkDic
 
-undefinedDic :: IO DictionarySet
-undefinedDic = return $ DictionarySet emptyDic emptyDic
+undefinedDic :: IO AsyncDicSet
+undefinedDic = return $ ADicSet emptyDic [] emptyDic
+
+registerWord :: Session -> Input -> Candidate -> IO ()
+registerWord sess inp cand =
+  modifyMVar_ (sess ^. skkDic) (return . insertADicSet inp cand)
+
+insertADicSet :: Input -> Candidate -> AsyncDicSet -> AsyncDicSet
+insertADicSet inp cand = udic %~ insert inp cand
+                     >>> merged %~ insert inp cand
+
+unregisterWord :: Session -> Input -> T.Text -> IO ()
+unregisterWord  sess inp cand =
+  modifyMVar_ (sess ^. skkDic) (return . delADicSet inp cand)
+
+delADicSet :: Input -> T.Text -> AsyncDicSet -> AsyncDicSet
+delADicSet inp txt = udic   %~ unregister inp txt
+                 >>> merged %~ unregister inp txt
 
 objc_implementation [Typed 'undefinedDic, Typed 'finalize,
-                     Typed 'viewDic, Typed 'newSession] [cunit|
+                     Typed 'viewDic, Typed 'newSession,
+                     Typed 'registerWord, Typed 'unregisterWord] [cunit|
 @implementation AppDelegate
 
 @synthesize menu = _menu;
@@ -335,6 +359,20 @@ objc_implementation [Typed 'undefinedDic, Typed 'finalize,
 
 - (void)applicationWillTerminate:(typename NSNotification *)aNotification {
     finalize(self.session);
+}
+
+-(void)
+   registerCandidate: (typename HsStablePtr) cand
+            forInput:(typename HsStablePtr) input
+{
+  registerWord(self.session, input, cand);
+}
+
+-(void)
+   unregisterCandidate: (typename HsStablePtr) cand
+              forInput:(typename HsStablePtr) input;
+{
+  unregisterWord(self.session, input, cand);
 }
 @end
 |]
