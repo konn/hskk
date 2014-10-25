@@ -10,7 +10,7 @@
 			<key>kind</key>
 			<integer>0</integer>
 			<key>location</key>
-			<string>SKK-JISYO.zipcode</string>
+			<string>zipcode/SKK-JISYO.zipcode</string>
 		</dict>
 		<dict>
 			<key>kind</key>

@@ -44,7 +44,7 @@ import           Language.C.Quote.ObjC
 import           Network.HTTP.Conduit     (HttpException, simpleHttp)
 import           System.Directory         (doesFileExist, getHomeDirectory)
 import           System.Directory         (removeFile, renameFile)
-import           System.FilePath          (joinPath, splitPath)
+import           System.FilePath          (joinPath, splitPath, takeFileName)
 
 objc_import ["Cocoa/Cocoa.h",
              "<InputMethodKit/InputMethodKit.h>",
@@ -100,10 +100,10 @@ objc_interface [cunit|
 @property (assign) typename HsStablePtr session;
 
 -(typename HsStablePtr)skkDic;
--(typename HsStablePtr)
+-(void)
    registerCandidate: (typename HsStablePtr) cand
             forInput:(typename HsStablePtr) input;
--(typename HsStablePtr)
+-(void)
    unregisterCandidate: (typename HsStablePtr) cand
               forInput:(typename HsStablePtr) input;
 @end
@@ -225,7 +225,7 @@ getDic (MiscDict k loc) = asyncBound $ handle (httpHandler loc) $ do
       nsLog $ "Downloading Dictionary: "++ loc
       bs <- simpleHttp $ "http://openlab.ring.gr.jp/skk/skk/dic/" ++ loc
       nsLog $ "Downloaded: "++ loc
-      path <- expandHome $ "~/Library/Application Support/hSKK/" ++ loc
+      path <- expandHome $ "~/Library/Application Support/hSKK/" ++ takeFileName  loc
       let src = convertFuzzy Discard "EUC-JP" "UTF-8" bs
       LBS.writeFile path src
       nsLog $ "Parsed: "++ loc
